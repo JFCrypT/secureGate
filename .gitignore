@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# Entornos y configuración local
+.env
+.env.*
+*.key
+*.pem
+secrets/
+config/local/
+
+# Bases de datos y datos sensibles
+*.db
+*.sqlite
+*.sqlite3
+
+# Datos biométricos / imágenes
+data/
+captures/
+images/
+embeddings/
+
+# Modelos descargados
+models/
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
