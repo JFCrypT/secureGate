@@ -34,3 +34,4 @@ models/
 # Sistema
 .DS_Store
 Thumbs.db
+*.code-workspace
