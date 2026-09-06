@@ -204,6 +204,12 @@ margen          = 0.211203
 
 No se observó solapamiento en este conjunto experimental.
 
+## Logs
+
+El Prototipo v1 muestra resultados y eventos por consola, pero no implementa todavía un sistema de logs persistentes.
+
+La definición, almacenamiento, análisis y eventual protección de logs de accesos, rechazos, anomalías y eventos del sistema corresponde al **GRUPO 3 — Detección de anomalías, alertas, logs e investigación de IA local**.
+
 ## Runtime continuo
 
 Archivo:
@@ -474,15 +480,15 @@ Si la Raspberry ya posee la misma `K_bio`, no es necesario volver a copiar la cl
 
 ### GRUPO 1 — Prototipo v1: biometría y ciberseguridad
 
-Desarrollo del prototipo sobre Raspberry Pi 3. Reconocimiento facial con YuNet + SFace, embeddings, enrolamiento offline, AES-256-GCM, SQLite, `K_bio`, firmware ESP-CAM y ciberseguridad del prototipo. El alcance termina en el prototipo funcional.
+Desarrollo del prototipo sobre Raspberry Pi 3. Reconocimiento facial con YuNet + SFace, embeddings, enrolamiento offline, AES-256-GCM, SQLite, `K_bio`, firmware ESP-CAM y ciberseguridad del prototipo.
 
 ### GRUPO 2 — Sensores y actuadores
 
 GPIO, relé, cerradura electromagnética, LED, buzzer y Reed switch. Lógica física de apertura, cierre, señalización y monitoreo.
 
-### GRUPO 3 — Detección de anomalías, alertas e investigación de IA local
+### GRUPO 3 — Detección de anomalías, alertas, logs e investigación de IA local
 
-Reglas determinísticas, evaluación de Isolation Forest e investigación sobre necesidad y factibilidad de un LLM local en Raspberry Pi 4. La IA local es opcional y nunca decide apertura.
+Definición de eventos y comportamientos normales, sospechosos y críticos; generación de alertas; implementación y análisis de logs de accesos y eventos; reglas determinísticas; evaluación de Isolation Forest e investigación sobre necesidad y factibilidad de un LLM local en Raspberry Pi 4. La IA local es opcional y nunca decide apertura.
 
 ### GRUPO 4 — Frontend
 
