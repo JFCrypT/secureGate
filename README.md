@@ -54,7 +54,14 @@ Diseñar e implementar un sistema de control de acceso físico seguro que combin
 - detección de anomalías;
 - inteligencia artificial local.
 
-La arquitectura debe preservar simplicidad, compatibilidad, auditabilidad, ejecución local, mínimo privilegio y bajo costo.
+La arquitectura debe preservar:
+
+- simplicidad;
+- compatibilidad;
+- auditabilidad;
+- ejecución local;
+- mínimo privilegio;
+- bajo costo.
 
 ---
 
@@ -104,7 +111,7 @@ Esto implica que el riesgo de clonación de tarjetas RFID deberá considerarse e
 
 ---
 
-## Prototipo v1
+# Prototipo v1
 
 La primera implementación se realiza sobre una **Raspberry Pi 3** utilizada previamente como plataforma de laboratorio.
 
@@ -151,6 +158,227 @@ Toda la lógica principal reside en la Raspberry Pi 3.
 
 ---
 
+# Flujo de trabajo de desarrollo
+
+El proyecto utiliza una separación explícita entre:
+
+- entorno de desarrollo y análisis;
+- repositorio Git;
+- hardware objetivo.
+
+La estrategia adoptada es:
+
+```text
+NOTEBOOK / XUBUNTU
+│
+├── desarrollo Python
+├── pruebas con imágenes
+├── enrolamiento experimental
+├── comparación intrausuario
+├── comparación interusuario
+├── calibración de thresholds
+├── análisis estadístico
+├── generación de resultados
+├── tests
+├── documentación
+└── git push
+        │
+        ▼
+      GitHub
+        │
+        ▼
+Raspberry Pi 3
+│
+├── git pull
+├── descarga local de modelos
+├── validación funcional
+├── benchmark ARM
+├── ESP-CAM
+├── GPIO
+├── relé
+├── temperatura
+├── memoria
+└── hardening
+```
+
+Regla práctica:
+
+```text
+Todo lo que no dependa del hardware
+→ notebook
+
+Todo lo que dependa del hardware
+→ Raspberry Pi
+```
+
+La notebook se utiliza como entorno principal de desarrollo porque permite:
+
+- iterar más rápido;
+- procesar datasets más grandes;
+- realizar comparaciones masivas;
+- calcular métricas;
+- generar gráficos;
+- calibrar thresholds;
+- ejecutar tests;
+- documentar cambios.
+
+La Raspberry Pi 3 se utiliza principalmente para validar:
+
+- compatibilidad ARM;
+- latencia real;
+- consumo de RAM;
+- uso de swap;
+- CPU;
+- temperatura;
+- ESP-CAM;
+- comunicaciones;
+- GPIO;
+- relé;
+- servicios Linux;
+- hardening.
+
+---
+
+# Política de Git y datos locales
+
+El repositorio GitHub es público.
+
+Por lo tanto, sólo se versionan:
+
+```text
+código
+scripts
+tests
+README
+documentación
+configuración no secreta
+requirements
+```
+
+No se versionan:
+
+```text
+fotografías
+embeddings
+bases SQLite reales
+claves
+secrets
+capturas
+datos biométricos
+modelos descargados
+```
+
+El `.gitignore` excluye:
+
+```text
+data/
+captures/
+images/
+embeddings/
+models/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+*.key
+*.pem
+secrets/
+config/local/
+```
+
+---
+
+## Transferencia manual de fotografías
+
+Las fotografías de enrolamiento y prueba se mantienen localmente.
+
+No se suben a GitHub.
+
+La notebook mantiene, por ejemplo:
+
+```text
+data/
+└── enrollment/
+    └── personaA/
+        ├── 01.jpg
+        ├── 02.jpg
+        ├── 03.jpg
+        ├── 04.jpg
+        └── 05.jpg
+```
+
+Cuando sea necesario validar el mismo conjunto en la Raspberry Pi 3, las imágenes se transfieren manualmente mediante:
+
+- `scp`;
+- pendrive;
+- red local;
+- otro mecanismo controlado.
+
+Ejemplo conceptual:
+
+```bash
+scp -r data/enrollment/personaA \
+  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/data/enrollment/
+```
+
+Estas fotografías siguen siendo archivos locales y continúan excluidas de Git en ambos equipos.
+
+---
+
+## Sincronización de código entre notebook y Raspberry
+
+El flujo normal de trabajo es:
+
+```text
+Notebook
+   ↓
+desarrollo
+   ↓
+tests
+   ↓
+git commit
+   ↓
+git push
+   ↓
+GitHub
+   ↓
+git pull
+   ↓
+Raspberry Pi 3
+```
+
+La Raspberry Pi recibe por Git únicamente:
+
+- código;
+- scripts;
+- tests;
+- README;
+- documentación;
+- archivos de configuración no sensibles.
+
+Los datos biométricos no forman parte de este flujo.
+
+---
+
+## Modelos faciales
+
+Los modelos YuNet y SFace tampoco se versionan.
+
+Cada equipo los reconstruye localmente mediante:
+
+```bash
+./scripts/download_models.sh
+```
+
+El script:
+
+- descarga los modelos;
+- verifica integridad con SHA-256;
+- evita depender de binarios versionados en el repositorio.
+
+---
+
 ## Pipeline facial
 
 ```text
@@ -177,33 +405,84 @@ autorización
 
 ### YuNet
 
-YuNet se utiliza como detector facial.
-
-Modelo inicial:
+Modelo utilizado:
 
 ```text
 face_detection_yunet_2023mar.onnx
 ```
 
+Funciones:
+
+- localizar rostros;
+- obtener landmarks;
+- permitir alineación;
+- preparar la entrada para reconocimiento.
+
 ### SFace
 
-SFace se utiliza para generar embeddings faciales.
-
-Modelo inicial:
+Modelo utilizado:
 
 ```text
 face_recognition_sface_2021dec.onnx
 ```
 
-El reconocimiento no compara imágenes directamente: compara el embedding generado durante un intento de acceso con los embeddings previamente enrolados.
+El embedding generado en el prototipo tiene:
+
+```text
+128 dimensiones
+```
+
+El reconocimiento no compara imágenes directamente.
+
+Compara embeddings faciales.
 
 ---
 
-## Enrolamiento de usuarios
+## Threshold de detección de YuNet
 
-El sistema no reentrena SFace para cada persona. El modelo ya se encuentra entrenado.
+El threshold inicial era:
 
-El método principal será enrolamiento en vivo mediante ESP-CAM:
+```text
+score_threshold = 0.9
+```
+
+Ese valor resultó demasiado restrictivo para capturas reales de enrolamiento.
+
+El prototipo utiliza actualmente:
+
+```text
+score_threshold = 0.7
+```
+
+Este threshold responde únicamente a:
+
+```text
+¿hay un rostro detectable?
+```
+
+No debe confundirse con el futuro threshold biométrico de SFace:
+
+```text
+¿el rostro corresponde a un usuario enrolado?
+```
+
+---
+
+# Enrolamiento de usuarios
+
+El sistema no reentrena SFace para cada persona.
+
+El modelo ya viene entrenado.
+
+Agregar un usuario consiste en un proceso de:
+
+```text
+enrolamiento biométrico
+```
+
+El método principal final será enrolamiento en vivo mediante ESP-CAM.
+
+Flujo previsto:
 
 ```text
 usuario
@@ -227,15 +506,170 @@ cifrado
 SQLite
 ```
 
-Inicialmente se prevé obtener aproximadamente **5 a 10 muestras válidas por usuario**, con pequeñas variaciones de posición, orientación, expresión e iluminación.
+Inicialmente se prevé obtener aproximadamente:
 
-Las fotografías existentes podrán utilizarse posteriormente para migración, pruebas o recuperación, pero no constituyen el método preferido de enrolamiento.
+```text
+5 a 10 muestras válidas por usuario
+```
+
+con pequeñas variaciones de:
+
+- posición;
+- orientación;
+- expresión;
+- iluminación.
 
 ---
 
-## Datos biométricos
+## Estructura de enrolamiento experimental
 
-Los embeddings faciales son considerados datos sensibles y no deben almacenarse en claro.
+Durante las pruebas iniciales se utiliza:
+
+```text
+data/
+└── enrollment/
+    └── personaA/
+        ├── 01.jpg
+        ├── 02.jpg
+        ├── 03.jpg
+        ├── 04.jpg
+        └── 05.jpg
+```
+
+Las capturas representan:
+
+```text
+01.jpg
+→ rostro frontal
+→ expresión neutra
+→ iluminación normal
+
+02.jpg
+→ leve giro hacia la izquierda
+
+03.jpg
+→ leve giro hacia la derecha
+
+04.jpg
+→ pequeña variación de expresión
+
+05.jpg
+→ pequeña variación de iluminación o posición
+```
+
+No se requieren poses extremas.
+
+El objetivo es representar variaciones naturales que una persona puede presentar al acercarse al sistema.
+
+Formatos admitidos:
+
+```text
+.jpg
+.jpeg
+.png
+```
+
+---
+
+## Uso de fotografías durante el desarrollo
+
+Las fotografías actuales son material experimental.
+
+Se utilizan para:
+
+- validar YuNet;
+- validar SFace;
+- medir similitud intrausuario;
+- medir similitud interusuario;
+- calibrar thresholds;
+- probar robustez.
+
+Estas imágenes:
+
+```text
+NO se versionan
+NO se suben a GitHub
+NO forman parte del repositorio público
+```
+
+En producción, el objetivo es que el enrolamiento en vivo genere embeddings y que las imágenes se descarten después del procesamiento, salvo necesidad específica y aprobada.
+
+---
+
+## Validación intrausuario inicial
+
+Se realizó una primera prueba con cinco capturas de una misma persona.
+
+Se obtuvieron:
+
+```text
+10 comparaciones intrausuario
+```
+
+Resultados de similitud coseno:
+
+```text
+mínimo : 0.576052
+máximo : 0.819145
+media  : 0.685984
+```
+
+Resultados de distancia L2:
+
+```text
+mínimo : 0.601423
+máximo : 0.920813
+media  : 0.785822
+```
+
+Peor caso intrausuario observado:
+
+```text
+02.jpg ↔ 04.jpg
+
+coseno = 0.576052
+L2     = 0.920813
+```
+
+Durante esta etapa:
+
+- los embeddings permanecieron únicamente en RAM;
+- no se almacenaron templates biométricos en disco;
+- no se definió todavía un threshold operativo de reconocimiento.
+
+---
+
+## Comparación facial inicial
+
+Prueba genuina:
+
+```text
+misma persona:
+coseno = 0.565232
+L2     = 0.932489
+```
+
+Prueba impostora:
+
+```text
+persona distinta:
+coseno = 0.009471
+L2     = 1.407501
+```
+
+La separación observada valida el funcionamiento básico de SFace.
+
+Sin embargo, estos casos aislados no son suficientes para fijar el threshold operativo.
+
+El siguiente paso es obtener distribuciones interusuario con más personas y más muestras.
+
+---
+
+# Datos biométricos
+
+Los embeddings faciales son considerados datos sensibles.
+
+No deben almacenarse en claro.
 
 No se utilizará:
 
@@ -259,7 +693,13 @@ ciphertext
 SQLite
 ```
 
-La clave `K_bio` se almacenará fuera de SQLite.
+La clave:
+
+```text
+K_bio
+```
+
+se almacenará fuera de SQLite.
 
 ---
 
@@ -276,7 +716,9 @@ datos en uso
 → plaintext temporal en RAM
 ```
 
-Los datos biométricos se almacenan cifrados en reposo y sólo se descifran temporalmente en memoria volátil durante el proceso de matching.
+Formulación del proyecto:
+
+> Los datos biométricos se almacenan cifrados en reposo y sólo se descifran temporalmente en memoria volátil durante el proceso de matching.
 
 Se analizarán:
 
@@ -304,13 +746,20 @@ embedding
 descartar imagen
 ```
 
-Podrán utilizarse temporalmente durante desarrollo, calibración, debugging y pruebas.
+Podrán utilizarse temporalmente durante:
+
+- desarrollo;
+- calibración;
+- debugging;
+- pruebas.
 
 ---
 
-## Base de datos
+# Base de datos
 
 Se utilizará SQLite.
+
+Arquitectura lógica prevista:
 
 ```text
 SQLite
@@ -324,8 +773,6 @@ SQLite
 ```
 
 ### users
-
-Ejemplos conceptuales:
 
 ```text
 user_id
@@ -370,7 +817,7 @@ metadata
 
 ---
 
-## Gestión de claves
+# Gestión de claves
 
 Los secretos criptográficos no deben almacenarse dentro de SQLite.
 
@@ -390,15 +837,33 @@ K_device
 
 Las claves se separarán por función.
 
-La primera implementación podrá utilizar almacenamiento protegido por Linux. Posteriormente se evaluarán TPM 2.0 y Secure Element.
+No se utilizará una única clave para todo el sistema.
+
+La primera implementación podrá utilizar almacenamiento protegido por Linux.
+
+Posteriormente se evaluarán:
+
+- TPM 2.0;
+- Secure Element;
+- almacenamiento respaldado por hardware.
 
 ---
 
-## Seguridad ESP-CAM ↔ Raspberry Pi
+# Seguridad ESP-CAM ↔ Raspberry Pi
 
 No se confiará únicamente en IP conocida y LAN local.
 
-La comunicación deberá evolucionar hacia un canal autenticado, íntegro, protegido contra replay y preferentemente cifrado.
+La comunicación deberá evolucionar hacia un canal:
+
+```text
+autenticado
++
+íntegro
++
+protegido contra replay
++
+preferentemente cifrado
+```
 
 Alternativas a evaluar:
 
@@ -410,9 +875,9 @@ HMAC por sí solo proporciona autenticación e integridad, pero no confidenciali
 
 ---
 
-## Anti-replay
+# Anti-replay
 
-Se prevé utilizar campos como:
+Se prevé utilizar:
 
 ```text
 device_id
@@ -423,15 +888,31 @@ payload
 MAC
 ```
 
-La Raspberry deberá detectar y rechazar nonces repetidos, contadores antiguos, timestamps fuera de ventana, mensajes alterados y dispositivos desconocidos.
+La Raspberry deberá detectar y rechazar:
+
+- nonces repetidos;
+- contadores antiguos;
+- timestamps fuera de ventana;
+- mensajes alterados;
+- dispositivos desconocidos.
 
 ---
 
-## Reconocimiento facial y spoofing
+# Reconocimiento facial y spoofing
 
 Reconocer una identidad no equivale a demostrar presencia física real.
 
-Debe distinguirse entre reconocimiento facial y presentation attack detection.
+Debe distinguirse:
+
+```text
+reconocimiento facial
+```
+
+de:
+
+```text
+presentation attack detection
+```
 
 Un atacante podría intentar utilizar:
 
@@ -444,7 +925,7 @@ La detección de liveness / anti-spoofing será una etapa posterior.
 
 ---
 
-## RFID — versión final
+# RFID — versión final
 
 RFID no forma parte del prototipo v1.
 
@@ -464,13 +945,17 @@ SQLite
 autorización
 ```
 
-Este mecanismo protege el UID almacenado, pero no evita por sí mismo la clonación de tarjetas con UID estático.
+Este mecanismo protege el UID almacenado.
+
+No evita por sí mismo la clonación de tarjetas con UID estático.
+
+Ese riesgo se documentará como riesgo residual.
 
 ---
 
-## Logs tamper-evident
+# Logs tamper-evident
 
-Se prevé implementar integridad verificable de logs mediante una cadena HMAC:
+Se prevé implementar:
 
 ```text
 MAC_0 = valor inicial
@@ -482,11 +967,21 @@ HMAC(
 )
 ```
 
-La propiedad buscada es `tamper-evident`, no `tamper-proof`.
+La propiedad buscada es:
+
+```text
+tamper-evident
+```
+
+y no:
+
+```text
+tamper-proof
+```
 
 ---
 
-## Detección de anomalías
+# Detección de anomalías
 
 No se utilizará un LLM como detector primario.
 
@@ -504,7 +999,7 @@ Isolation Forest es actualmente el candidato principal.
 
 ---
 
-## Reglas de seguridad
+# Reglas de seguridad
 
 Ejemplos:
 
@@ -529,9 +1024,14 @@ Las reglas determinísticas tendrán prioridad sobre cualquier modelo ML.
 
 ---
 
-## Inteligencia Artificial local
+# Inteligencia Artificial local
 
-Un LLM local podrá utilizarse posteriormente para explicar eventos, resumir actividad, generar reportes y responder consultas sobre datos previamente estructurados.
+Un LLM local podrá utilizarse posteriormente para:
+
+- explicar eventos;
+- resumir actividad;
+- generar reportes;
+- responder consultas estructuradas.
 
 El LLM no participará en decisiones de apertura.
 
@@ -551,11 +1051,9 @@ detección de anomalías
 interpretación IA
 ```
 
-La cerradura deberá seguir funcionando aunque el LLM o el detector ML estén fuera de servicio.
-
 ---
 
-## Hardening Linux
+# Hardening Linux
 
 Se analizarán:
 
@@ -581,7 +1079,7 @@ Se analizarán:
 
 ---
 
-## Seguridad de credenciales
+# Seguridad de credenciales
 
 Las credenciales administrativas nunca deberán almacenarse en documentación o código.
 
@@ -595,13 +1093,22 @@ SÍ:
 Argon2id(password)
 ```
 
-Alternativas posibles: scrypt y bcrypt.
+Alternativas posibles:
+
+- scrypt;
+- bcrypt.
 
 ---
 
-## Sensor de puerta
+# Sensor de puerta
 
-Se propone incorporar posteriormente un Reed switch para medir el estado físico real de la puerta.
+Se propone incorporar posteriormente un:
+
+```text
+Reed switch
+```
+
+para medir el estado físico real de la puerta.
 
 ```text
 imán próximo
@@ -611,11 +1118,23 @@ imán alejado
 → OPEN
 ```
 
-Permitirá registrar `t_open`, `t_close`, duración y detectar una puerta abierta demasiado tiempo.
+Permitirá registrar:
+
+```text
+t_open
+t_close
+duración
+```
+
+y detectar:
+
+```text
+puerta abierta demasiado tiempo
+```
 
 ---
 
-## Arquitectura final prevista
+# Arquitectura final prevista
 
 ```text
                     ┌─────────────────────┐
@@ -663,7 +1182,7 @@ Buzzer
 
 ---
 
-## Storage final previsto
+# Storage final previsto
 
 ```text
 SQLite
@@ -692,7 +1211,7 @@ eventualmente TPM / Secure Element
 
 ---
 
-## Arquitectura de software conceptual
+# Arquitectura de software conceptual
 
 ```text
 Raspberry Pi
@@ -727,9 +1246,16 @@ Esta separación es conceptual. No implica necesariamente utilizar microservicio
 
 ---
 
-## Concurrencia
+# Concurrencia
 
-Una tarea lenta no debe bloquear lectura de sensores, reconocimiento, decisión de acceso, GPIO, relé ni buzzer.
+Una tarea lenta no debe bloquear:
+
+- lectura de sensores;
+- reconocimiento;
+- decisión de acceso;
+- GPIO;
+- relé;
+- buzzer.
 
 Se evaluarán:
 
@@ -742,15 +1268,37 @@ Se evaluarán:
 
 ---
 
-## Fail-safe y fail-secure
+# Fail-safe y fail-secure
 
-Deberá analizarse el comportamiento ante reboot, caída de cámara, caída de RFID, fallo de SQLite, ausencia de clave, fallo de ML, fallo de LLM, pérdida de Wi-Fi y corte de energía.
+Deberá analizarse el comportamiento ante:
 
-La decisión `fail-safe` vs. `fail-secure` dependerá también de seguridad física, evacuación y normativa institucional.
+- reboot;
+- caída de cámara;
+- caída de RFID;
+- fallo de SQLite;
+- ausencia de clave;
+- fallo de ML;
+- fallo de LLM;
+- pérdida de Wi-Fi;
+- corte de energía.
+
+La decisión:
+
+```text
+fail-safe
+vs.
+fail-secure
+```
+
+dependerá también de:
+
+- seguridad física;
+- evacuación;
+- normativa institucional.
 
 ---
 
-## Seguridad física
+# Seguridad física
 
 El proyecto también considerará:
 
@@ -768,7 +1316,7 @@ El proyecto también considerará:
 
 ---
 
-## Criptografía
+# Criptografía
 
 Se utilizarán exclusivamente primitivas estándar y bibliotecas maduras.
 
@@ -790,57 +1338,22 @@ No utilizar:
 
 ---
 
-## Modelos faciales
-
-Detector:
-
-```text
-YuNet
-face_detection_yunet_2023mar.onnx
-```
-
-Extractor:
-
-```text
-SFace
-face_recognition_sface_2021dec.onnx
-```
-
-Framework:
-
-```text
-OpenCV DNN
-```
-
-Versión inicial:
-
-```text
-OpenCV 4.11.0
-```
-
----
-
-## Modelos no versionados
-
-Los modelos ONNX no se incluyen en Git.
-
-Se descargan mediante:
-
-```bash
-./scripts/download_models.sh
-```
-
-El script verifica su integridad mediante SHA-256.
-
----
-
-## Estructura actual
+# Estructura actual
 
 ```text
 secureGate/
 │
 ├── README.md
 ├── requirements.txt
+│
+├── data/
+│   └── enrollment/
+│       └── personaA/
+│           ├── 01.jpg
+│           ├── 02.jpg
+│           ├── 03.jpg
+│           ├── 04.jpg
+│           └── 05.jpg
 │
 ├── docs/
 │   └── PROTOTIPO_V1.md
@@ -855,6 +1368,9 @@ secureGate/
 ├── raspberry/
 │   ├── README.md
 │   ├── check_models.py
+│   ├── test_image.py
+│   ├── compare_faces.py
+│   ├── validate_enrollment.py
 │   │
 │   └── securegate/
 │       └── vision/
@@ -865,11 +1381,11 @@ secureGate/
 └── tests/
 ```
 
-`models/` se encuentra excluido de Git.
+`data/` y `models/` se encuentran excluidos de Git.
 
 ---
 
-## Instalación inicial
+# Instalación inicial
 
 ```bash
 python3 -m venv .venv
@@ -883,17 +1399,41 @@ python -m pip install -r requirements.txt
 python raspberry/check_models.py
 ```
 
-Salida esperada:
+---
 
-```text
-[OK] YuNet inicializado correctamente
-[OK] SFace inicializado correctamente
-[secureGate] YuNet + SFace disponibles
+# Pruebas disponibles
+
+## Verificación de modelos
+
+```bash
+python raspberry/check_models.py
+```
+
+## Imagen estática
+
+```bash
+python raspberry/test_image.py \
+  data/test/rostro.png
+```
+
+## Comparación de rostros
+
+```bash
+python raspberry/compare_faces.py \
+  data/test/rostro.png \
+  data/test/personaA_2.png
+```
+
+## Validación de enrolamiento
+
+```bash
+python raspberry/validate_enrollment.py \
+  data/enrollment/personaA
 ```
 
 ---
 
-## Seguridad del repositorio
+# Seguridad del repositorio
 
 Este repositorio es público.
 
@@ -916,7 +1456,7 @@ No se deben versionar:
 
 ---
 
-## Fases generales
+# Fases generales
 
 1. Inventario y arquitectura.
 2. Threat Model.
@@ -932,7 +1472,7 @@ No se deben versionar:
 
 ---
 
-## Principios de diseño
+# Principios de diseño
 
 ```text
 SEGURIDAD
@@ -948,11 +1488,18 @@ BAJO COSTO
 EJECUCIÓN LOCAL
 ```
 
-Se evitarán complejidad innecesaria, microservicios por moda, blockchain, criptografía experimental, cloud innecesario e IA generativa en decisiones críticas.
+Se evitarán:
+
+- complejidad innecesaria;
+- microservicios por moda;
+- blockchain;
+- criptografía experimental;
+- cloud innecesario;
+- IA generativa en decisiones críticas.
 
 ---
 
-## Flujo conceptual final
+# Flujo conceptual final
 
 ```text
 SENSORES
@@ -984,9 +1531,9 @@ MONITOREO
 
 ---
 
-## Estado actual del desarrollo
+# Estado actual del desarrollo
 
-Actualmente se encuentra validado en el entorno de desarrollo Xubuntu:
+Actualmente se encuentra validado:
 
 ```text
 OpenCV 4.11.0
@@ -996,30 +1543,27 @@ YuNet
 SFace
 ```
 
-Los modelos:
+en Xubuntu y en Raspberry Pi 3.
 
-```text
-face_detection_yunet_2023mar.onnx
-face_recognition_sface_2021dec.onnx
-```
+También se encuentra validado:
 
-se cargan correctamente.
+- carga de YuNet;
+- carga de SFace;
+- detección de rostro;
+- alineación;
+- generación de embedding de 128 dimensiones;
+- comparación mediante similitud coseno;
+- comparación mediante distancia L2;
+- validación intrausuario con cinco capturas;
+- ajuste de YuNet a `score_threshold = 0.7`;
+- separación entre entorno de desarrollo y hardware objetivo;
+- transferencia manual de datos biométricos fuera de Git.
 
-El siguiente hito es validar el mismo pipeline sobre Raspberry Pi 3 y posteriormente realizar:
-
-```text
-imagen estática
-→ detección
-→ alineación
-→ embedding
-→ benchmark
-```
-
-antes de conectar la ESP-CAM.
+El siguiente hito es obtener distribuciones interusuario para comenzar a determinar el threshold operativo de SFace.
 
 ---
 
-## Uso académico
+# Uso académico
 
 El proyecto se desarrolla con fines académicos y experimentales asociados al sistema de ingreso al Laboratorio de Mecatrónica de la Facultad de Ingeniería del Ejército.
 
