@@ -2,193 +2,94 @@
 
 Sistema de control de acceso seguro para el ingreso al **Laboratorio de Mecatrónica de la Facultad de Ingeniería del Ejército**.
 
-`secureGate` evoluciona un sistema de cerradura electrónica existente hacia una arquitectura de control de acceso con mayor nivel de ciberseguridad, incorporando biometría facial, RFID, criptografía aplicada, protección de datos sensibles, auditoría, detección de anomalías y, eventualmente, IA local.
-
 ## Estado actual
 
-### Prototipo v1
+El **Prototipo v1** se encuentra funcional en notebook/Xubuntu y preparado para validación final sobre Raspberry Pi 3.
 
-- Raspberry Pi 3 como hardware objetivo.
+Incluye:
 - ESP-CAM como sensor óptico.
-- Reconocimiento facial con YuNet + SFace.
-- Enrolamiento offline en notebook/Xubuntu.
-- SQLite para almacenamiento biométrico.
-- Embeddings cifrados con AES-256-GCM.
-- `K_bio` global para la base biométrica, almacenada fuera de SQLite y fuera de Git.
-- Identificación 1:N contra templates cifrados.
-- Threshold de reconocimiento del prototipo: `0.45`.
-- Apertura mediante relé: siguiente etapa.
-- RFID: fuera del prototipo v1; se integrará posteriormente en Raspberry Pi 4.
-
-### Arquitectura final prevista
-
-- Raspberry Pi 4 existente en el laboratorio.
-- Acceso por reconocimiento facial **o** RFID.
+- YuNet para detección facial.
+- SFace para extracción de embeddings.
+- Enrolamiento offline.
 - SQLite.
-- Relé.
-- Cerradura electromagnética.
-- LED.
-- Buzzer.
-- Reed switch.
-- Detección de anomalías.
-- IA local opcional.
-- Hardening, gestión de claves, comunicaciones seguras y logs protegidos.
+- Embeddings cifrados con AES-256-GCM.
+- `K_bio` global para la base biométrica.
+- Identificación 1:N.
+- Runtime continuo.
+- Regla temporal 2-de-3 frames.
+- Salida por consola:
+  - `USUARIO VÁLIDO: user_00#`
+  - `USUARIO NO AUTORIZADO`
 
-## Flujo de trabajo
+No incluye GPIO, relé, RFID, Reed switch, detección de anomalías, IA local ni frontend.
+
+## Arquitectura del prototipo
 
 ```text
-NOTEBOOK / XUBUNTU
+NOTEBOOK / ADMIN
 │
-├── desarrollo
-├── enrolamiento offline
-├── generación de embeddings
-├── validación biométrica
-├── cifrado AES-256-GCM
-├── construcción/actualización de securegate.db
-└── git push
+├── fotos
+├── YuNet + SFace
+├── embeddings
+├── validación
+├── AES-256-GCM
+└── securegate.db
+        │
+        │ transferencia manual
+        ▼
+Raspberry Pi 3
+│
+├── securegate.db
+├── K_bio
+├── modelos YuNet/SFace
+└── runtime continuo
         │
         ▼
-      GitHub
-        │
-        ▼
-RASPBERRY PI
-│
-├── git pull
-├── modelos locales
-├── securegate.db transferida manualmente
-├── K_bio transferida manualmente
-├── ESP-CAM
-├── reconocimiento en vivo
-├── GPIO
-└── relé
-```
-
-Regla práctica:
-
-```text
-Todo lo que no dependa del hardware
-→ notebook
-
-Todo lo que dependa del hardware
-→ Raspberry Pi
-```
-
-## Separación ADMIN / RUNTIME
-
-### ADMIN — notebook
-
-El enrolamiento y la incorporación de usuarios se realizan fuera del sistema operativo de la puerta.
-
-```text
-fotos
-↓
-YuNet
-↓
-SFace
-↓
-embeddings
-↓
-validación
-↓
-AES-256-GCM con K_bio
-↓
-securegate.db
-```
-
-Las fotografías de enrolamiento:
-
-- no se suben a GitHub;
-- no se transfieren a Raspberry Pi;
-- no forman parte del runtime final;
-- pueden descartarse una vez generado el material biométrico requerido.
-
-### RUNTIME — Raspberry Pi
-
-La Raspberry recibe:
-
-```text
-securegate.db
-K_bio
-código
-modelos YuNet/SFace
-```
-
-No necesita fotografías de enrolamiento.
-
-Durante operación:
-
-```text
 ESP-CAM
-↓
-frame temporal
-↓
-YuNet
-↓
-SFace
-↓
-embedding_query
-↓
-comparación contra templates cifrados
-↓
-usuario válido / no autorizado
+192.168.1.95
+/capture
 ```
 
-## Política de Git y datos sensibles
+La Raspberry Pi 3 no necesita fotografías de enrolamiento.
 
-El repositorio es público.
+## ESP-CAM
 
-Se versionan código, scripts, tests, documentación, requirements y configuración no secreta.
+Firmware desarrollado con PlatformIO.
 
-No se versionan:
-
-- fotografías;
-- embeddings;
-- bases SQLite reales;
-- claves;
-- secretos;
-- capturas;
-- modelos descargados.
-
-El `.gitignore` contempla:
+IP reservada por DHCP:
 
 ```text
-data/
-captures/
-images/
-embeddings/
-models/
-local/
-*.db
-*.sqlite
-*.sqlite3
-.env
-.env.*
-*.key
-*.pem
-secrets/
-config/local/
+192.168.1.95
 ```
 
-`K_bio` permanece dentro del árbol local del proyecto:
+Endpoints:
 
 ```text
-secureGate/local/keys/k_bio
+/
+→ healthcheck
+
+/capture
+→ captura JPEG
 ```
 
-pero nunca se sube al repositorio.
+Resolución validada:
+
+```text
+640x480
+```
+
+La ESP-CAM sólo captura y entrega imágenes. La biometría se procesa en notebook/Raspberry.
 
 ## Pipeline facial
 
 ```text
-imagen
+frame
 ↓
 normalización
 ↓
 lado mayor máximo = 800 px
 ↓
 YuNet
-↓
-detección facial
 ↓
 alineación
 ↓
@@ -197,117 +98,71 @@ SFace
 embedding 128D
 ```
 
-Modelos:
+Parámetros del prototipo:
 
 ```text
-YuNet: face_detection_yunet_2023mar.onnx
-SFace: face_recognition_sface_2021dec.onnx
-OpenCV: 4.11.0
-```
-
-Parámetros congelados para el prototipo:
-
-```text
-YuNet score_threshold = 0.7
-Normalización máxima = 800 px
+OpenCV = 4.11.0
+YuNet threshold = 0.7
 Métrica SFace = similitud coseno
 Threshold SFace = 0.45
+Regla temporal = 2 de 3 frames
 ```
 
-## Enrolamiento offline
+## Enrolamiento
 
-Convención pseudonimizada:
+Usuarios pseudonimizados:
 
 ```text
 user_001
 user_002
 user_003
-...
 ```
 
-Estructura experimental:
+Estado actual:
 
 ```text
-data/
-└── enrollment/
-    ├── user_001/
-    │   ├── 01.jpg
-    │   ├── 02.jpg
-    │   ├── 03.jpg
-    │   ├── 04.jpg
-    │   └── 05.jpg
-    ├── user_002/
-    │   └── ...
-    └── user_003/
-        └── ...
+user_001 → 5 templates
+user_002 → 5 templates
+user_003 → 5 templates
 ```
 
-Criterio inicial:
+Total:
 
 ```text
-01.jpg → frontal, expresión neutra
-02.jpg → leve giro izquierda
-03.jpg → leve giro derecha
-04.jpg → pequeña variación de expresión
-05.jpg → pequeña variación de iluminación/posición
+15 templates activos
 ```
 
-El enrolamiento es incremental. Un usuario nuevo se agrega sin modificar los anteriores. Un usuario ya enrolado no se sobrescribe automáticamente.
+El enrolamiento es incremental y no sobrescribe automáticamente usuarios existentes.
 
-## Base biométrica segura
-
-SQLite contiene:
-
-```text
-users
-biometric_templates
-```
-
-Cada template almacena:
-
-```text
-user_id
-ciphertext
-nonce
-model_version
-algorithm_version
-created_at
-active
-```
+## Seguridad biométrica
 
 Los embeddings no se almacenan en claro.
 
 ```text
 embedding
 ↓
-serialización
-↓
 AES-256-GCM
-↓
-ciphertext
 ↓
 SQLite
 ```
 
-### K_bio
-
+`K_bio`:
 - 256 bits.
-- Global para todos los templates biométricos de esta instancia.
-- No es una clave por usuario.
-- No participa en la identificación.
-- Protege los embeddings en reposo.
-- Está fuera de SQLite.
-- Está fuera de Git.
+- Global para la base biométrica.
+- Fuera de SQLite.
+- Fuera de Git.
+- Ruta local: `local/keys/k_bio`.
 - Se transfiere manualmente a Raspberry Pi.
-- Cada template usa un nonce GCM único.
+
+Cada template usa un nonce GCM único.
 
 ## Validación criptográfica
 
-Round-trip validado:
+Round-trip:
 
 ```text
 embedding
-→ AES-256-GCM
+→ cifrado
 → SQLite
 → lectura
 → descifrado
@@ -322,286 +177,189 @@ Ciphertext: 528 bytes
 Nonce: 12 bytes
 Igualdad de bytes: True
 Igualdad de arrays: True
-
-Round-trip AES-256-GCM + SQLite: PASS
+PASS
 ```
 
-## Validación biométrica multiusuario
+## Validación biométrica offline
 
-Dataset actual:
+Dataset:
 
 ```text
 3 usuarios
 5 imágenes por usuario
 15 muestras
 30 comparaciones genuinas
-75 comparaciones impostoras
-105 comparaciones totales
+75 impostoras
+105 totales
 ```
 
-### Similitud coseno
-
-```text
-GENUINAS
-mínimo   : 0.540249
-máximo   : 0.915049
-media    : 0.737737
-mediana  : 0.741141
-
-IMPOSTORAS
-mínimo   : -0.039285
-máximo   : 0.329046
-media    : 0.193046
-mediana  : 0.205272
-```
-
-Margen observado:
+Coseno:
 
 ```text
 genuino mínimo  = 0.540249
 impostor máximo = 0.329046
-margen           = 0.211203
+margen          = 0.211203
 ```
 
-### Distancia L2
+No se observó solapamiento en este conjunto experimental.
+
+## Runtime continuo
+
+Archivo:
 
 ```text
-GENUINAS
-mínimo   : 0.412192
-máximo   : 0.958907
-media    : 0.712431
-mediana  : 0.719186
-
-IMPOSTORAS
-mínimo   : 1.158408
-máximo   : 1.441725
-media    : 1.268722
-mediana  : 1.260736
+raspberry/runtime_recognize_espcam.py
 ```
 
-Margen observado:
+Ejecución:
 
-```text
-genuino máximo  = 0.958907
-impostor mínimo = 1.158408
-margen           = 0.199501
+```bash
+python raspberry/runtime_recognize_espcam.py \
+  http://192.168.1.95/capture
 ```
 
-No se observó solapamiento entre distribuciones genuina e impostora en este conjunto experimental.
-
-Para el prototipo se congela:
+Lógica:
 
 ```text
-SFace cosine threshold = 0.45
-```
-
-Este valor es específico del prototipo de laboratorio.
-
-## Estado de enrolamiento actual
-
-```text
-user_001 → 5 templates
-user_002 → 5 templates
-user_003 → 5 templates
-```
-
-Total:
-
-```text
-15 templates biométricos activos
-```
-
-Todos cifrados con AES-256-GCM.
-
-## Runtime de reconocimiento
-
-Se implementó identificación 1:N contra la base cifrada:
-
-```text
-imagen_query
+capturar 3 frames válidos
 ↓
-YuNet + SFace
+si al menos 2 identifican al mismo usuario
+con score >= 0.45
 ↓
-embedding_query
+USUARIO VÁLIDO
+
+caso contrario
 ↓
-cargar templates activos
-↓
-descifrar temporalmente con K_bio
-↓
-comparar por similitud coseno
-↓
-mejor coincidencia
-↓
-threshold 0.45
-```
-
-Salida:
-
-```text
-[ACCESO] USUARIO VÁLIDO: user_00#
-```
-
-o:
-
-```text
-[ACCESO] USUARIO NO AUTORIZADO
-```
-
-Pruebas realizadas:
-
-```text
-user_001 → reconocido
-user_002 → reconocido
-user_003 → reconocido
-```
-
-Prueba impostora:
-
-```text
-mejor coincidencia: user_003
-score: 0.270803
-threshold: 0.45
-
-→ USUARIO NO AUTORIZADO
-```
-
-Prueba genuina independiente de `user_001` con imagen no usada en enrolamiento:
-
-```text
-mejor coincidencia: user_001
-score: 0.599675
-threshold: 0.45
-
-→ USUARIO VÁLIDO
-```
-
-## Scripts actuales
-
-```text
-scripts/generate_k_bio.py
-raspberry/init_db.py
-raspberry/check_models.py
-raspberry/test_image.py
-raspberry/compare_faces.py
-raspberry/validate_enrollment.py
-raspberry/analyze_thresholds.py
-raspberry/test_secure_storage.py
-admin/enroll_user.py
-raspberry/runtime_recognize_image.py
-raspberry/securegate/vision/pipeline.py
-```
-
-## Próximo hito
-
-```text
-ESP-CAM
-↓
-frame en vivo
-↓
-Raspberry Pi 3
-↓
-YuNet + SFace
-↓
-securegate.db + K_bio
-↓
-user_001 / user_002 / user_003
-o
 USUARIO NO AUTORIZADO
 ```
 
-Después:
+## Validación en vivo
+
+Prueba con `user_001`:
 
 ```text
-USUARIO VÁLIDO
-↓
-GPIO
-↓
-RELÉ
+0.391301
+0.586555
+0.581802
+→ 2/3
+→ USUARIO VÁLIDO
+
+0.634341
+0.564879
+0.600887
+→ 3/3
+→ USUARIO VÁLIDO
+
+0.525558
+0.470321
+0.557747
+→ 3/3
+→ USUARIO VÁLIDO
+
+0.532937
+0.496281
+0.489149
+→ 3/3
+→ USUARIO VÁLIDO
 ```
 
-## Arquitectura final prevista
+Una persona no enrolada fue rechazada consistentemente.
+
+Pendiente de validación presencial:
 
 ```text
-                    ┌─────────────────────┐
-                    │       ESP-CAM       │
-                    │  sensor de imagen   │
-                    └──────────┬──────────┘
-                               │
-                          canal seguro
-                               │
-                               ▼
-┌─────────────────┐    ┌─────────────────────────┐
-│  LECTOR RFID    │───►│     RASPBERRY PI 4      │
-│ UID existente   │    │                         │
-└─────────────────┘    │ biometría               │
-                       │ autorización             │
-┌─────────────────┐    │ SQLite                  │
-│ SENSOR REED     │───►│ anomalías               │
-│ puerta          │    │ IA local opcional       │
-└─────────────────┘    └───────────┬─────────────┘
-                                   │
-                                  GPIO
-                                   │
-                                   ▼
-                              ┌────────┐
-                              │  RELÉ  │
-                              └───┬────┘
-                                  │
-                                  ▼
-                           cerradura electromagnética
+user_002
+user_003
 ```
 
-En la arquitectura final:
+## Política de Git
+
+No se versionan:
 
 ```text
-biometría válida
-O
-RFID autorizado
-→ acceso
+data/
+models/
+local/
+captures/
+images/
+embeddings/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+*.key
+*.pem
+secrets/
+config/local/
+esp32cam/include/network_secrets.hpp
 ```
 
-No se trata de 2FA obligatorio.
+## Despliegue sobre Raspberry Pi 3
 
-## Principios de seguridad
+En Raspberry Pi 3:
 
-- datos biométricos cifrados en reposo;
-- plaintext biométrico sólo temporal en RAM;
-- no almacenar fotos de enrolamiento en Raspberry;
-- no subir biometría ni claves a Git;
-- claves separadas por función;
-- primitivas criptográficas estándar;
-- mínimo privilegio;
-- comunicaciones autenticadas;
-- anti-replay;
-- logs protegidos;
-- LLM fuera del camino crítico.
+```bash
+cd ~/Documents/Proyectos/secureGate
+git pull
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
 
----
+Los modelos deben estar disponibles localmente:
 
-# Organización del trabajo por grupos
+```bash
+./scripts/download_models.sh
+```
 
-## GRUPO 1 — Prototipo v1: biometría y ciberseguridad
+Transferencia manual desde notebook:
 
-Desarrollo del prototipo que se presentará inicialmente sobre Raspberry Pi 3. Implementación del reconocimiento facial con YuNet + SFace, generación y validación de embeddings, enrolamiento offline, cifrado de templates con AES-256-GCM, base SQLite, gestión de K_bio, seguridad de comunicaciones ESP-CAM ↔ Raspberry, autenticación de dispositivos, anti-replay, hardening Linux y logs seguros.
+```text
+data/db/securegate.db
+local/keys/k_bio
+```
 
-## GRUPO 2 — Sensores y actuadores
+No se transfieren fotografías.
 
-Integración y prueba de GPIO, relé, cerradura electromagnética, LED, buzzer y sensor Reed. Desarrollo de la lógica de apertura, cierre y señalización, detección del estado real de la puerta, medición de tiempos de apertura y generación de eventos físicos para el resto del sistema.
+Una vez preparado:
 
-## GRUPO 3 — Detección de anomalías, alertas e investigación de IA local
+```bash
+python raspberry/runtime_recognize_espcam.py \
+  http://192.168.1.95/capture
+```
 
-Definición de comportamientos normales, sospechosos y críticos. Implementación de reglas determinísticas para múltiples intentos fallidos, accesos fuera de horario, frecuencia inusual, puerta abierta demasiado tiempo y otros eventos. Evaluación de Isolation Forest para detección de anomalías.
+Ese comando inicia el prototipo funcional.
 
-Además, deberá investigarse la conveniencia y factibilidad de incorporar un LLM local en Raspberry Pi 4. La IA local es una propuesta y no una obligación: el grupo deberá determinar si aporta valor real, si es técnicamente viable y si los recursos de la Raspberry permiten utilizarla sin afectar el funcionamiento crítico. En caso de resultar conveniente, podrá emplearse para consultas, explicación de eventos y generación de resúmenes, pero nunca para decidir la apertura de la puerta.
+## Organización por grupos
 
-## GRUPO 4 — Frontend
+### GRUPO 1 — Prototipo v1: biometría y ciberseguridad
 
-Desarrollo de la interfaz de usuario de la solución final. El frontend deberá permitir visualizar accesos, usuarios pseudonimizados, eventos, alertas, estado de puerta, métricas, resultados biométricos y RFID. Si finalmente se incorpora IA local, también podrá exponer las consultas y respuestas generadas por dicho módulo.
+Desarrollo del prototipo sobre Raspberry Pi 3. Reconocimiento facial con YuNet + SFace, embeddings, enrolamiento offline, AES-256-GCM, SQLite, `K_bio`, firmware ESP-CAM y ciberseguridad del prototipo. El alcance termina en el prototipo funcional.
 
-## GRUPO 5 — Integración final sobre Raspberry Pi 4 y RFID legacy
+### GRUPO 2 — Sensores y actuadores
 
-Responsable de llevar el prototipo a la Raspberry Pi 4 existente e integrar todos los subsistemas de la propuesta final. Incluye relevamiento e integración del lector RFID y tarjetas actuales, preservando usuarios, credenciales y autorizaciones, adaptación del acceso RFID al nuevo esquema seguro, integración de biometría, sensores, actuadores, anomalías, frontend y, sólo si resulta aprobada tras su evaluación, IA local. Este grupo coordina la integración completa del sistema final.
+GPIO, relé, cerradura electromagnética, LED, buzzer y Reed switch. Lógica física de apertura, cierre, señalización y monitoreo.
 
-## Uso académico
+### GRUPO 3 — Detección de anomalías, alertas e investigación de IA local
 
-Proyecto desarrollado con fines académicos y experimentales asociados al sistema de ingreso al Laboratorio de Mecatrónica de la Facultad de Ingeniería del Ejército.
+Reglas determinísticas, evaluación de Isolation Forest e investigación sobre necesidad y factibilidad de un LLM local en Raspberry Pi 4. La IA local es opcional y nunca decide apertura.
+
+### GRUPO 4 — Frontend
+
+Desarrollo de la interfaz de usuario de la solución final.
+
+### GRUPO 5 — Integración final sobre Raspberry Pi 4 y RFID legacy
+
+Porteo del prototipo a Raspberry Pi 4, integración RFID legacy preservando tarjetas y autorizaciones, e integración final de los subsistemas.
+
+## Fuera del alcance del Prototipo v1
+
+- GPIO.
+- Relé.
+- RFID.
+- Reed switch.
+- Detección de anomalías.
+- Isolation Forest.
+- IA local.
+- Frontend.
+- Integración final en Raspberry Pi 4.

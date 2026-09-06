@@ -39,8 +39,6 @@ def normalize_image(image, max_dimension=MAX_IMAGE_DIMENSION):
 
 
 def load_image(image_path):
-    image_path = Path(image_path)
-
     image = cv2.imread(str(image_path))
 
     if image is None:
@@ -58,10 +56,12 @@ def create_recognizer():
     )
 
 
-def create_detector(image):
+def extract_embedding_from_image(image, recognizer=None):
+    image = normalize_image(image)
+
     height, width = image.shape[:2]
 
-    return cv2.FaceDetectorYN.create(
+    detector = cv2.FaceDetectorYN.create(
         str(YUNET_MODEL),
         "",
         (width, height),
@@ -70,23 +70,17 @@ def create_detector(image):
         5000,
     )
 
-
-def extract_embedding(image_path, recognizer=None):
-    image = load_image(image_path)
-
-    detector = create_detector(image)
-
     _, faces = detector.detect(image)
 
     if faces is None or len(faces) == 0:
         raise RuntimeError(
-            f"No se detectó ningún rostro en {Path(image_path).name}"
+            "No se detectó ningún rostro."
         )
 
     if len(faces) != 1:
         raise RuntimeError(
-            f"Se detectaron {len(faces)} rostros en "
-            f"{Path(image_path).name}; se requiere exactamente uno."
+            f"Se detectaron {len(faces)} rostros; "
+            "se requiere exactamente uno."
         )
 
     if recognizer is None:
@@ -103,3 +97,12 @@ def extract_embedding(image_path, recognizer=None):
         embedding,
         dtype=np.float32,
     ).reshape(-1)
+
+
+def extract_embedding(image_path, recognizer=None):
+    image = load_image(image_path)
+
+    return extract_embedding_from_image(
+        image,
+        recognizer,
+    )
