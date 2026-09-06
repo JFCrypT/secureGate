@@ -576,6 +576,32 @@ No se trata de 2FA obligatorio.
 - logs protegidos;
 - LLM fuera del camino crítico.
 
+---
+
+# Organización del trabajo por grupos
+
+## GRUPO 1 — Prototipo v1: biometría y ciberseguridad
+
+Desarrollo del prototipo que se presentará inicialmente sobre Raspberry Pi 3. Implementación del reconocimiento facial con YuNet + SFace, generación y validación de embeddings, enrolamiento offline, cifrado de templates con AES-256-GCM, base SQLite, gestión de K_bio, seguridad de comunicaciones ESP-CAM ↔ Raspberry, autenticación de dispositivos, anti-replay, hardening Linux y logs seguros. El alcance de este grupo termina en el prototipo funcional.
+
+## GRUPO 2 — Sensores y actuadores
+
+Integración y prueba de GPIO, relé, cerradura electromagnética, LED, buzzer y sensor Reed. Desarrollo de la lógica de apertura, cierre y señalización, detección del estado real de la puerta, medición de tiempos de apertura y generación de eventos físicos para el resto del sistema.
+
+## GRUPO 3 — Detección de anomalías, alertas e investigación de IA local
+
+Definición de comportamientos normales, sospechosos y críticos. Implementación de reglas determinísticas para múltiples intentos fallidos, accesos fuera de horario, frecuencia inusual, puerta abierta demasiado tiempo y otros eventos. Evaluación de Isolation Forest para detección de anomalías.
+
+Además, deberá investigarse la conveniencia y factibilidad de incorporar un LLM local en Raspberry Pi 4. La IA local es una propuesta y no una obligación: el grupo deberá determinar si aporta valor real, si es técnicamente viable y si los recursos de la Raspberry permiten utilizarla sin afectar el funcionamiento crítico. En caso de resultar conveniente, podrá emplearse para consultas, explicación de eventos y generación de resúmenes, pero nunca para decidir la apertura de la puerta.
+
+## GRUPO 4 — Frontend
+
+Desarrollo de la interfaz de usuario de la solución final. El frontend deberá permitir visualizar accesos, usuarios pseudonimizados, eventos, alertas, estado de puerta, métricas, resultados biométricos y RFID. Si finalmente se incorpora IA local, también podrá exponer las consultas y respuestas generadas por dicho módulo.
+
+## GRUPO 5 — Integración final sobre Raspberry Pi 4 y RFID legacy
+
+Responsable de llevar el prototipo a la Raspberry Pi 4 existente e integrar todos los subsistemas de la propuesta final. Incluye relevamiento e integración del lector RFID y tarjetas actuales, preservando usuarios, credenciales y autorizaciones, adaptación del acceso RFID al nuevo esquema seguro, integración de biometría, sensores, actuadores, anomalías, frontend y, sólo si resulta aprobada tras su evaluación, IA local. Este grupo coordina la integración completa del sistema final.
+
 ## Uso académico
 
 Proyecto desarrollado con fines académicos y experimentales asociados al sistema de ingreso al Laboratorio de Mecatrónica de la Facultad de Ingeniería del Ejército.
