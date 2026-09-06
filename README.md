@@ -339,6 +339,280 @@ python raspberry/runtime_recognize_espcam.py \
 Ese comando inicia el prototipo funcional.
 
 
+
+## Flujo completo de incorporación y uso de un usuario biométrico
+
+### 1. Alta de un usuario
+
+El alta se realiza únicamente en el entorno ADMIN/notebook.
+
+Cada usuario se identifica de forma pseudonimizada:
+
+```text
+user_001
+user_002
+user_003
+user_004
+...
+```
+
+Las fotografías se colocan en una carpeta local:
+
+```text
+data/enrollment/user_###/
+├── 01.jpg
+├── 02.jpg
+├── 03.jpg
+├── 04.jpg
+└── 05.jpg
+```
+
+Comando general:
+
+```bash
+python admin/enroll_user.py \
+  user_### \
+  data/enrollment/user_###
+```
+
+El script procesa todas las imágenes y agrega el nuevo usuario sin modificar los templates de usuarios ya existentes.
+
+### 2. Vectorización de la imagen
+
+Cada fotografía pasa por el mismo pipeline facial:
+
+```text
+imagen
+↓
+normalización de tamaño
+↓
+lado mayor máximo = 800 px
+↓
+YuNet
+↓
+detección del rostro
+↓
+alineación
+↓
+SFace
+↓
+embedding facial
+```
+
+SFace genera un embedding de:
+
+```text
+128 componentes
+```
+
+Conceptualmente:
+
+```text
+[e1, e2, e3, ..., e128]
+```
+
+Cada componente es un valor real que representa características del rostro dentro del espacio de embeddings del modelo.
+
+No se almacena la fotografía como parte del runtime biométrico de la Raspberry.
+
+### 3. Cifrado del embedding
+
+El embedding se convierte a bytes y se cifra antes de almacenarse:
+
+```text
+embedding 128D
+↓
+serialización float32
+↓
+AES-256-GCM
+↓
+ciphertext
+↓
+SQLite
+```
+
+La clave utilizada es:
+
+```text
+K_bio
+```
+
+`K_bio`:
+
+- es única y global para la base biométrica de esta instancia;
+- tiene 256 bits;
+- no es una clave por usuario;
+- no identifica personas;
+- permanece fuera de SQLite;
+- permanece fuera de Git.
+
+Cada template utiliza un nonce GCM único.
+
+SQLite almacena el ciphertext y la metadata necesaria, nunca el embedding en claro.
+
+### 4. Qué ocurre cuando se reconoce una persona
+
+La ESP-CAM no realiza reconocimiento.
+
+Su función es únicamente:
+
+```text
+ESP-CAM
+↓
+captura JPEG
+↓
+/capture
+```
+
+El runtime solicita frames a la ESP-CAM de forma continua.
+
+Para cada frame válido:
+
+```text
+frame
+↓
+YuNet
+↓
+alineación
+↓
+SFace
+↓
+embedding_query de 128 componentes
+```
+
+El nuevo `embedding_query` no se guarda en SQLite.
+
+### 5. Descifrado de templates durante el matching
+
+Al iniciar el runtime se cargan los templates biométricos activos desde SQLite.
+
+Para cada template:
+
+```text
+SQLite
+↓
+ciphertext + nonce
+↓
+AES-256-GCM con K_bio
+↓
+embedding enrolado
+↓
+RAM
+```
+
+El embedding se descifra temporalmente en memoria RAM para poder compararlo con el `embedding_query`.
+
+El proceso de matching utiliza similitud coseno:
+
+```text
+embedding_query
+vs.
+embedding enrolado
+↓
+score
+```
+
+El runtime evalúa todos los templates activos y selecciona la mejor coincidencia.
+
+Los embeddings descifrados no se vuelven a escribir en claro en disco.
+
+### 6. Decisión biométrica
+
+El threshold del prototipo es:
+
+```text
+0.45
+```
+
+Para reducir falsos rechazos por una captura desfavorable, el runtime utiliza una regla temporal:
+
+```text
+3 frames válidos
+↓
+si al menos 2 de 3
+identifican al mismo usuario
+con score >= 0.45
+↓
+USUARIO VÁLIDO
+```
+
+En caso contrario:
+
+```text
+USUARIO NO AUTORIZADO
+```
+
+### 7. Loop de reconocimiento
+
+El runtime permanece ejecutándose continuamente hasta que el operador lo detiene con `Ctrl+C`.
+
+Conceptualmente:
+
+```text
+while True:
+    pedir frame a ESP-CAM
+
+    si no hay rostro:
+        continuar
+
+    generar embedding_query
+
+    comparar contra templates activos
+
+    acumular resultados de 3 frames
+
+    aplicar regla 2-de-3
+
+    imprimir resultado
+
+    continuar esperando
+```
+
+No es necesario reiniciar ni liberar la ESP-CAM después de cada usuario.
+
+La cámara permanece activa y disponible para la siguiente captura.
+
+### 8. Flujo resumido completo
+
+```text
+ENROLAMIENTO OFFLINE
+
+fotos user_###
+↓
+YuNet
+↓
+SFace
+↓
+5 embeddings × 128D
+↓
+AES-256-GCM con K_bio
+↓
+securegate.db
+
+
+RECONOCIMIENTO EN VIVO
+
+ESP-CAM
+↓
+JPEG
+↓
+YuNet
+↓
+SFace
+↓
+embedding_query 128D
+↓
+descifrado temporal de templates con K_bio
+↓
+matching 1:N
+↓
+3 frames
+↓
+regla 2-de-3
+↓
+USUARIO VÁLIDO / NO AUTORIZADO
+```
+
 ## Comandos de utilidad
 
 ### Enrolar un usuario nuevo

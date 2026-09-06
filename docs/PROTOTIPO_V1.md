@@ -199,6 +199,163 @@ python raspberry/runtime_recognize_espcam.py \
 Ese comando inicia el prototipo funcional.
 
 
+
+## Flujo de alta y reconocimiento
+
+### Alta de un usuario
+
+El alta se realiza fuera de la Raspberry, en notebook:
+
+```text
+data/enrollment/user_###/
+├── 01.jpg
+├── 02.jpg
+├── 03.jpg
+├── 04.jpg
+└── 05.jpg
+```
+
+Comando:
+
+```bash
+python admin/enroll_user.py \
+  user_### \
+  data/enrollment/user_###
+```
+
+Cada imagen se procesa así:
+
+```text
+imagen
+↓
+normalización ≤ 800 px
+↓
+YuNet
+↓
+alineación
+↓
+SFace
+↓
+embedding de 128 componentes
+```
+
+SFace no se entrena durante el enrolamiento. Se utiliza el modelo ya entrenado para extraer el vector biométrico.
+
+### Cifrado y almacenamiento
+
+Cada embedding se serializa y se cifra:
+
+```text
+embedding 128D
+↓
+float32 → bytes
+↓
+AES-256-GCM con K_bio
+↓
+ciphertext
+↓
+SQLite
+```
+
+`K_bio` es una única clave global de 256 bits para la base biométrica.
+
+Cada template utiliza un nonce GCM único.
+
+Los embeddings no se almacenan en claro.
+
+### Reconocimiento en vivo
+
+La ESP-CAM sólo entrega imágenes:
+
+```text
+ESP-CAM
+↓
+/capture
+↓
+JPEG
+```
+
+El runtime de Raspberry solicita frames continuamente.
+
+Cada frame válido genera:
+
+```text
+frame
+↓
+YuNet
+↓
+SFace
+↓
+embedding_query de 128 componentes
+```
+
+El runtime carga los templates cifrados de SQLite y los descifra temporalmente en RAM:
+
+```text
+ciphertext
+↓
+AES-256-GCM + K_bio
+↓
+embedding enrolado
+↓
+RAM
+```
+
+Luego compara:
+
+```text
+embedding_query
+vs.
+todos los embeddings enrolados
+↓
+similitud coseno
+↓
+mejor coincidencia
+```
+
+### Regla temporal
+
+Threshold:
+
+```text
+0.45
+```
+
+Decisión:
+
+```text
+3 frames válidos
+↓
+2 o más identifican al mismo usuario
+con score >= 0.45
+↓
+USUARIO VÁLIDO
+```
+
+Caso contrario:
+
+```text
+USUARIO NO AUTORIZADO
+```
+
+### Loop
+
+El programa se mantiene activo:
+
+```text
+while True:
+    capturar frame
+    detectar rostro
+    generar embedding_query
+    comparar
+    acumular 3 resultados
+    decidir 2-de-3
+    imprimir
+    continuar
+```
+
+La ESP-CAM no se reinicia ni se libera después de cada reconocimiento.
+
 ## Comandos de operación y mantenimiento
 
 ### Enrolar un nuevo usuario — sólo en notebook
