@@ -124,12 +124,13 @@ Estado actual:
 user_001 → 5 templates
 user_002 → 5 templates
 user_003 → 5 templates
+user_004 → 5 templates
 ```
 
 Total:
 
 ```text
-15 templates activos
+20 templates activos
 ```
 
 El enrolamiento es incremental y no sobrescribe automáticamente usuarios existentes.
@@ -182,7 +183,7 @@ PASS
 
 ## Validación biométrica offline
 
-Dataset:
+La calibración de threshold documentada a continuación se realizó antes de incorporar `user_004`, por lo que corresponde al conjunto experimental original:
 
 ```text
 3 usuarios
@@ -270,6 +271,7 @@ Pendiente de validación presencial:
 ```text
 user_002
 user_003
+user_004
 ```
 
 ## Política de Git
@@ -337,10 +339,21 @@ Ese comando inicia el prototipo funcional.
 
 Las fotografías se preparan únicamente en el entorno ADMIN/notebook.
 
-Estructura esperada:
+Convención:
 
 ```text
-data/enrollment/user_004/
+user_001
+user_002
+user_003
+user_004
+user_005
+...
+```
+
+Para agregar un nuevo usuario, crear su carpeta local con al menos 5 fotografías:
+
+```text
+data/enrollment/user_###/
 ├── 01.jpg
 ├── 02.jpg
 ├── 03.jpg
@@ -348,14 +361,22 @@ data/enrollment/user_004/
 └── 05.jpg
 ```
 
-Ejemplo:
+Comando general:
 
 ```bash
 cd ~/secureGate
 
 python admin/enroll_user.py \
-  user_004 \
-  data/enrollment/user_004
+  user_### \
+  data/enrollment/user_###
+```
+
+Ejemplo para `user_005`:
+
+```bash
+python admin/enroll_user.py \
+  user_005 \
+  data/enrollment/user_005
 ```
 
 El enrolamiento es incremental: agregar `user_004` no modifica los templates existentes de `user_001`, `user_002` o `user_003`.

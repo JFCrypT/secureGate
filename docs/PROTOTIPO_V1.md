@@ -62,12 +62,13 @@ Regla temporal = 2 de 3 frames
 user_001 → 5 templates
 user_002 → 5 templates
 user_003 → 5 templates
+user_004 → 5 templates
 ```
 
 Total:
 
 ```text
-15 templates cifrados
+20 templates cifrados
 ```
 
 ## K_bio
@@ -171,6 +172,7 @@ Pendiente para demostración:
 ```text
 user_002
 user_003
+user_004
 ```
 
 ## Despliegue en Raspberry Pi 3
@@ -201,12 +203,28 @@ Ese comando inicia el prototipo funcional.
 
 ### Enrolar un nuevo usuario — sólo en notebook
 
+Crear la carpeta local:
+
+```text
+data/enrollment/user_###/
+```
+
+con al menos 5 fotografías y ejecutar:
+
 ```bash
 cd ~/secureGate
 
 python admin/enroll_user.py \
-  user_004 \
-  data/enrollment/user_004
+  user_### \
+  data/enrollment/user_###
+```
+
+Ejemplo:
+
+```bash
+python admin/enroll_user.py \
+  user_005 \
+  data/enrollment/user_005
 ```
 
 Verificar:
