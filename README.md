@@ -330,6 +330,125 @@ python raspberry/runtime_recognize_espcam.py \
 
 Ese comando inicia el prototipo funcional.
 
+
+## Comandos de utilidad
+
+### Enrolar un usuario nuevo
+
+Las fotografías se preparan únicamente en el entorno ADMIN/notebook.
+
+Estructura esperada:
+
+```text
+data/enrollment/user_004/
+├── 01.jpg
+├── 02.jpg
+├── 03.jpg
+├── 04.jpg
+└── 05.jpg
+```
+
+Ejemplo:
+
+```bash
+cd ~/Documents/Proyectos/secureGate
+
+python admin/enroll_user.py \
+  user_004 \
+  data/enrollment/user_004
+```
+
+El enrolamiento es incremental: agregar `user_004` no modifica los templates existentes de `user_001`, `user_002` o `user_003`.
+
+Verificación de templates activos:
+
+```bash
+sqlite3 data/db/securegate.db \
+'SELECT u.external_id, COUNT(t.template_id) AS templates
+ FROM users u
+ LEFT JOIN biometric_templates t
+   ON t.user_id = u.user_id
+  AND t.active = 1
+ GROUP BY u.user_id
+ ORDER BY u.external_id;'
+```
+
+### Analizar thresholds biométricos
+
+```bash
+python raspberry/analyze_thresholds.py \
+  data/enrollment
+```
+
+### Validar una imagen local contra la base
+
+```bash
+python raspberry/runtime_recognize_image.py \
+  /ruta/a/imagen.jpg
+```
+
+### Ejecutar secureGate con ESP-CAM
+
+En notebook o Raspberry Pi:
+
+```bash
+cd ~/Documents/Proyectos/secureGate
+source .venv/bin/activate
+
+python raspberry/runtime_recognize_espcam.py \
+  http://192.168.1.95/capture
+```
+
+El proceso queda activo hasta `Ctrl+C`.
+
+### Archivos que deben transferirse manualmente a Raspberry Pi
+
+Después de enrolar o modificar usuarios en la notebook, la base biométrica actualizada debe copiarse manualmente:
+
+```text
+data/db/securegate.db
+```
+
+También debe existir en la Raspberry la misma clave:
+
+```text
+local/keys/k_bio
+```
+
+`K_bio` se copia manualmente una vez por instalación, o nuevamente sólo si se reemplaza/rota de forma deliberada.
+
+Ejemplo desde notebook:
+
+```bash
+scp data/db/securegate.db \
+  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/data/db/
+
+scp local/keys/k_bio \
+  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/local/keys/
+```
+
+Las fotografías de enrolamiento NO se transfieren a Raspberry Pi.
+
+El código se actualiza mediante Git:
+
+```bash
+git pull
+```
+
+Los modelos YuNet/SFace tampoco se transfieren necesariamente a mano; pueden descargarse localmente en Raspberry mediante:
+
+```bash
+./scripts/download_models.sh
+```
+
+Por lo tanto, para actualizar usuarios normalmente basta con transferir:
+
+```text
+securegate.db
+```
+
+Si la Raspberry ya posee la misma `K_bio`, no es necesario volver a copiar la clave.
+
 ## Organización por grupos
 
 ### GRUPO 1 — Prototipo v1: biometría y ciberseguridad

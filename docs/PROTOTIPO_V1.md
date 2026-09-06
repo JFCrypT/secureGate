@@ -196,6 +196,78 @@ python raspberry/runtime_recognize_espcam.py \
 
 Ese comando inicia el prototipo funcional.
 
+
+## Comandos de operación y mantenimiento
+
+### Enrolar un nuevo usuario — sólo en notebook
+
+```bash
+cd ~/Documents/Proyectos/secureGate
+
+python admin/enroll_user.py \
+  user_004 \
+  data/enrollment/user_004
+```
+
+Verificar:
+
+```bash
+sqlite3 data/db/securegate.db \
+'SELECT u.external_id, COUNT(t.template_id) AS templates
+ FROM users u
+ LEFT JOIN biometric_templates t
+   ON t.user_id = u.user_id
+  AND t.active = 1
+ GROUP BY u.user_id
+ ORDER BY u.external_id;'
+```
+
+### Transferir la base actualizada a Raspberry Pi
+
+Después de enrolar usuarios, copiar manualmente:
+
+```text
+data/db/securegate.db
+```
+
+Ejemplo:
+
+```bash
+scp data/db/securegate.db \
+  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/data/db/
+```
+
+`K_bio` debe existir también en:
+
+```text
+local/keys/k_bio
+```
+
+y debe ser exactamente la misma clave con la que se cifró la base.
+
+Si la Raspberry ya posee la `K_bio` correcta, no hace falta copiarla otra vez.
+
+Las fotografías de enrolamiento no se transfieren.
+
+### Preparar Raspberry Pi
+
+```bash
+cd ~/Documents/Proyectos/secureGate
+git pull
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+./scripts/download_models.sh
+```
+
+### Ejecutar Prototipo v1
+
+```bash
+python raspberry/runtime_recognize_espcam.py \
+  http://192.168.1.95/capture
+```
+
+El runtime queda activo continuamente hasta `Ctrl+C`.
+
 ## Fuera del alcance
 
 - RFID.
