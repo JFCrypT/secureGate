@@ -582,7 +582,7 @@ No se trata de 2FA obligatorio.
 
 ## GRUPO 1 — Prototipo v1: biometría y ciberseguridad
 
-Desarrollo del prototipo que se presentará inicialmente sobre Raspberry Pi 3. Implementación del reconocimiento facial con YuNet + SFace, generación y validación de embeddings, enrolamiento offline, cifrado de templates con AES-256-GCM, base SQLite, gestión de K_bio, seguridad de comunicaciones ESP-CAM ↔ Raspberry, autenticación de dispositivos, anti-replay, hardening Linux y logs seguros. El alcance de este grupo termina en el prototipo funcional.
+Desarrollo del prototipo que se presentará inicialmente sobre Raspberry Pi 3. Implementación del reconocimiento facial con YuNet + SFace, generación y validación de embeddings, enrolamiento offline, cifrado de templates con AES-256-GCM, base SQLite, gestión de K_bio, seguridad de comunicaciones ESP-CAM ↔ Raspberry, autenticación de dispositivos, anti-replay, hardening Linux y logs seguros.
 
 ## GRUPO 2 — Sensores y actuadores
 
