@@ -36,3 +36,5 @@ models/
 Thumbs.db
 *.code-workspace
 local/
+esp32cam/include/network_secrets.hpp
+esp32cam/.pio/
