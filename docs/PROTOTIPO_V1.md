@@ -187,7 +187,7 @@ No se necesitan fotografías.
 Luego:
 
 ```bash
-cd ~/Documents/Proyectos/secureGate
+cd ~/secureGate
 source .venv/bin/activate
 
 python raspberry/runtime_recognize_espcam.py \
@@ -202,7 +202,7 @@ Ese comando inicia el prototipo funcional.
 ### Enrolar un nuevo usuario — sólo en notebook
 
 ```bash
-cd ~/Documents/Proyectos/secureGate
+cd ~/secureGate
 
 python admin/enroll_user.py \
   user_004 \
@@ -234,7 +234,7 @@ Ejemplo:
 
 ```bash
 scp data/db/securegate.db \
-  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/data/db/
+  usuario@raspberrypi:~/secureGate/data/db/
 ```
 
 `K_bio` debe existir también en:
@@ -252,7 +252,7 @@ Las fotografías de enrolamiento no se transfieren.
 ### Preparar Raspberry Pi
 
 ```bash
-cd ~/Documents/Proyectos/secureGate
+cd ~/secureGate
 git pull
 source .venv/bin/activate
 python -m pip install -r requirements.txt

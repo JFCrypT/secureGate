@@ -300,7 +300,7 @@ esp32cam/include/network_secrets.hpp
 En Raspberry Pi 3:
 
 ```bash
-cd ~/Documents/Proyectos/secureGate
+cd ~/secureGate
 git pull
 source .venv/bin/activate
 python -m pip install -r requirements.txt
@@ -351,7 +351,7 @@ data/enrollment/user_004/
 Ejemplo:
 
 ```bash
-cd ~/Documents/Proyectos/secureGate
+cd ~/secureGate
 
 python admin/enroll_user.py \
   user_004 \
@@ -392,7 +392,7 @@ python raspberry/runtime_recognize_image.py \
 En notebook o Raspberry Pi:
 
 ```bash
-cd ~/Documents/Proyectos/secureGate
+cd ~/secureGate
 source .venv/bin/activate
 
 python raspberry/runtime_recognize_espcam.py \
@@ -421,10 +421,10 @@ Ejemplo desde notebook:
 
 ```bash
 scp data/db/securegate.db \
-  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/data/db/
+  usuario@raspberrypi:~/secureGate/data/db/
 
 scp local/keys/k_bio \
-  jfcrypt@raspberrypi:~/Documents/Proyectos/secureGate/local/keys/
+  usuario@raspberrypi:~/secureGate/local/keys/
 ```
 
 Las fotografías de enrolamiento NO se transfieren a Raspberry Pi.
