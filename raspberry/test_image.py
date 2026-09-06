@@ -43,7 +43,7 @@ def main():
         str(YUNET_MODEL),
         "",
         (width, height),
-        0.9,
+        0.7,
         0.3,
         5000,
     )
