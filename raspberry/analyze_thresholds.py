@@ -10,52 +10,19 @@ import numpy as np
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-MODEL_DIR = ROOT_DIR / "models"
 
-YUNET_MODEL = MODEL_DIR / "face_detection_yunet_2023mar.onnx"
-SFACE_MODEL = MODEL_DIR / "face_recognition_sface_2021dec.onnx"
+sys.path.insert(
+    0,
+    str(ROOT_DIR / "raspberry"),
+)
+
+from securegate.vision.pipeline import (
+    create_recognizer,
+    extract_embedding,
+)
+
 
 VALID_EXTENSIONS = {".jpg", ".jpeg", ".png"}
-YUNET_THRESHOLD = 0.7
-
-
-def extract_embedding(image_path, recognizer):
-    image = cv2.imread(str(image_path))
-
-    if image is None:
-        raise RuntimeError(f"No se pudo leer {image_path}")
-
-    height, width = image.shape[:2]
-
-    detector = cv2.FaceDetectorYN.create(
-        str(YUNET_MODEL),
-        "",
-        (width, height),
-        YUNET_THRESHOLD,
-        0.3,
-        5000,
-    )
-
-    _, faces = detector.detect(image)
-
-    if faces is None or len(faces) == 0:
-        raise RuntimeError(
-            f"No se detectó ningún rostro en {image_path}"
-        )
-
-    if len(faces) != 1:
-        raise RuntimeError(
-            f"Se detectaron {len(faces)} rostros en {image_path}; "
-            "se requiere exactamente uno"
-        )
-
-    aligned = recognizer.alignCrop(image, faces[0])
-    embedding = recognizer.feature(aligned)
-
-    return np.asarray(
-        embedding,
-        dtype=np.float32,
-    ).reshape(1, -1)
 
 
 def describe(name, values):
@@ -72,34 +39,34 @@ def main():
     parser = argparse.ArgumentParser(
         description="Analiza scores genuinos e impostores."
     )
+
     parser.add_argument(
         "directory",
         type=Path,
-        help="Directorio raíz de enrolamiento",
+        help="Directorio raíz de enrolamiento.",
     )
 
     args = parser.parse_args()
+
     root = args.directory.expanduser().resolve()
 
     if not root.is_dir():
         print(f"[ERROR] Directorio inexistente: {root}")
         return 1
 
-    recognizer = cv2.FaceRecognizerSF.create(
-        str(SFACE_MODEL),
-        "",
-    )
-
-    samples = []
-
     person_dirs = sorted(
-        path for path in root.iterdir()
+        path
+        for path in root.iterdir()
         if path.is_dir()
     )
 
     if len(person_dirs) < 2:
-        print("[ERROR] Se requieren al menos dos personas.")
+        print("[ERROR] Se requieren al menos dos usuarios.")
         return 1
+
+    recognizer = create_recognizer()
+
+    samples = []
 
     print("[secureGate] Extracción de embeddings")
     print()
@@ -130,7 +97,11 @@ def main():
                 return 2
 
             samples.append(
-                (person_dir.name, image_path.name, embedding)
+                (
+                    person_dir.name,
+                    image_path.name,
+                    embedding.reshape(1, -1),
+                )
             )
 
             print(
@@ -142,9 +113,6 @@ def main():
 
     genuine_l2 = []
     impostor_l2 = []
-
-    print()
-    print("[secureGate] Comparaciones")
 
     for sample1, sample2 in combinations(samples, 2):
         person1, image1, emb1 = sample1
@@ -178,7 +146,9 @@ def main():
     print()
 
     describe("GENUINAS", genuine_cosine)
+
     print()
+
     describe("IMPOSTORAS", impostor_cosine)
 
     print()
@@ -186,7 +156,9 @@ def main():
     print()
 
     describe("GENUINAS", genuine_l2)
+
     print()
+
     describe("IMPOSTORAS", impostor_l2)
 
     min_genuine_cos = min(genuine_cosine)
@@ -202,12 +174,10 @@ def main():
         f"[COSENO] genuino mínimo   : "
         f"{min_genuine_cos:.6f}"
     )
-
     print(
         f"[COSENO] impostor máximo  : "
         f"{max_impostor_cos:.6f}"
     )
-
     print(
         f"[COSENO] margen observado : "
         f"{min_genuine_cos - max_impostor_cos:.6f}"
@@ -219,12 +189,10 @@ def main():
         f"[L2] genuino máximo       : "
         f"{max_genuine_l2:.6f}"
     )
-
     print(
         f"[L2] impostor mínimo      : "
         f"{min_impostor_l2:.6f}"
     )
-
     print(
         f"[L2] margen observado     : "
         f"{min_impostor_l2 - max_genuine_l2:.6f}"
@@ -235,7 +203,6 @@ def main():
         "[IMPORTANTE] Estos resultados no fijan todavía "
         "un threshold de producción."
     )
-
     print(
         "[SEGURIDAD] Los embeddings permanecieron "
         "únicamente en memoria RAM."
