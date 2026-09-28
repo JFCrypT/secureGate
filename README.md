@@ -20,8 +20,46 @@ Incluye:
 - Salida por consola:
   - `USUARIO VÁLIDO: user_00#`
   - `USUARIO NO AUTORIZADO`
+- Alertas por Telegram fuera del horario permitido, con hora y fotografía.
 
 No incluye GPIO, relé, RFID, Reed switch, detección de anomalías, IA local ni frontend.
+
+## Alertas por Telegram fuera de horario
+
+El runtime puede avisar a un chat de Telegram cuando detecta un intento de ingreso en estos horarios:
+
+```text
+Lunes a viernes: 21:00 a 05:59
+Sábados y domingos: 17:00 a 08:59
+```
+
+Cada alerta incluye:
+
+- aviso de ingreso fuera de horario;
+- fecha y hora local;
+- resultado del reconocimiento;
+- fotografía capturada por la ESP-CAM.
+
+La zona horaria predeterminada es `America/Argentina/Buenos_Aires`. Puede cambiarse con `SECUREGATE_TIMEZONE` o con la opción `--timezone`.
+
+### Configuración segura
+
+Crear un bot con `@BotFather`, iniciar una conversación con el bot y definir las variables sólo en la Raspberry Pi:
+
+```bash
+export TELEGRAM_BOT_TOKEN="token_del_bot"
+export TELEGRAM_CHAT_ID="id_del_chat"
+```
+
+El token y el identificador del chat no deben agregarse al repositorio. Si ambas variables faltan, el reconocimiento continúa y muestra que las alertas están deshabilitadas. Si sólo una está definida, el runtime se detiene para advertir la configuración incompleta.
+
+Para evitar mensajes repetidos mientras una persona permanece frente a la cámara, se aplica una espera de 60 segundos por resultado. Puede ajustarse, por ejemplo:
+
+```bash
+python raspberry/runtime_recognize_espcam.py \
+  http://192.168.1.95/capture \
+  --alert-cooldown 120
+```
 
 ## Arquitectura del prototipo
 
