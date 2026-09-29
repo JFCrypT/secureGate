@@ -4,6 +4,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 import argparse
+from datetime import datetime
+import os
 import sqlite3
 import sys
 import time
@@ -23,6 +25,14 @@ sys.path.insert(
 from securegate.vision.pipeline import (
     create_recognizer,
     extract_embedding_from_image,
+)
+from securegate.alerts import (
+    DEFAULT_TIMEZONE,
+    TelegramConfigurationError,
+    TelegramDeliveryError,
+    TelegramNotifier,
+    is_restricted_time,
+    load_timezone,
 )
 
 
@@ -273,6 +283,7 @@ def evaluate_window(
             (
                 best_user,
                 best_score,
+                image,
             )
         )
 
@@ -284,7 +295,7 @@ def evaluate_window(
 def decide(results):
     valid_results = [
         (user, score)
-        for user, score in results
+        for user, score, _image in results
         if score >= MATCH_THRESHOLD
     ]
 
@@ -327,6 +338,47 @@ def decide(results):
     )
 
 
+def select_alert_image(results, recognized_user):
+    if recognized_user is None:
+        candidates = results
+    else:
+        candidates = [
+            result
+            for result in results
+            if result[0] == recognized_user
+        ]
+
+    if not candidates:
+        candidates = results
+
+    return max(
+        candidates,
+        key=lambda result: result[1],
+    )[2]
+
+
+def build_alert_caption(moment, recognized_user):
+    if recognized_user is None:
+        result = "Usuario no autorizado"
+    else:
+        result = f"Usuario reconocido: {recognized_user}"
+
+    timezone_name = getattr(
+        moment.tzinfo,
+        "key",
+        str(moment.tzinfo),
+    )
+
+    return "\n".join(
+        [
+            "🚨 ALERTA: intento de ingreso fuera de horario",
+            f"Horario: {moment.strftime('%d/%m/%Y %H:%M:%S')}",
+            f"Zona horaria: {timezone_name}",
+            f"Resultado: {result}",
+        ]
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -358,7 +410,44 @@ def main():
         default=3.0,
     )
 
+    parser.add_argument(
+        "--alert-cooldown",
+        type=float,
+        default=60.0,
+        help=(
+            "Segundos mínimos entre alertas repetidas "
+            "del mismo resultado."
+        ),
+    )
+
+    parser.add_argument(
+        "--timezone",
+        default=os.environ.get(
+            "SECUREGATE_TIMEZONE",
+            DEFAULT_TIMEZONE,
+        ),
+        help=(
+            "Zona horaria IANA usada para evaluar "
+            "los horarios de acceso."
+        ),
+    )
+
     args = parser.parse_args()
+
+    if args.alert_cooldown < 0:
+        parser.error(
+            "--alert-cooldown no puede ser negativo."
+        )
+
+    try:
+        alert_timezone = load_timezone(args.timezone)
+        notifier = TelegramNotifier.from_environment()
+    except (
+        ValueError,
+        TelegramConfigurationError,
+    ) as exc:
+        print(f"[ERROR] Configuración de alertas: {exc}")
+        return 1
 
     print("[secureGate] Runtime continuo ESP-CAM")
     print(f"[INFO] URL: {args.url}")
@@ -371,6 +460,15 @@ def main():
         f"{REQUIRED_MATCHES} de "
         f"{DECISION_FRAMES} frames"
     )
+    print(f"[INFO] Zona horaria: {args.timezone}")
+
+    if notifier is None:
+        print(
+            "[ADVERTENCIA] Alertas Telegram deshabilitadas: "
+            "faltan TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID."
+        )
+    else:
+        print("[INFO] Alertas Telegram habilitadas.")
 
     try:
         recognizer = create_recognizer()
@@ -388,6 +486,8 @@ def main():
     print("[INFO] Ctrl+C para finalizar.")
     print()
 
+    last_alert_by_result = {}
+
     try:
         while True:
             results = evaluate_window(
@@ -404,7 +504,7 @@ def main():
 
             print("[INFO] Ventana de decisión:")
 
-            for index, (user, score) in enumerate(
+            for index, (user, score, _image) in enumerate(
                 results,
                 start=1,
             ):
@@ -436,6 +536,51 @@ def main():
                     "[ACCESO] USUARIO "
                     "NO AUTORIZADO"
                 )
+
+            event_time = datetime.now(alert_timezone)
+
+            if (
+                notifier is not None
+                and is_restricted_time(event_time)
+            ):
+                result_key = user or "unauthorized"
+                monotonic_now = time.monotonic()
+                last_alert = last_alert_by_result.get(
+                    result_key,
+                    float("-inf"),
+                )
+
+                if (
+                    monotonic_now - last_alert
+                    >= args.alert_cooldown
+                ):
+                    last_alert_by_result[result_key] = (
+                        monotonic_now
+                    )
+                    alert_image = select_alert_image(
+                        results,
+                        user,
+                    )
+                    caption = build_alert_caption(
+                        event_time,
+                        user,
+                    )
+
+                    try:
+                        notifier.send_photo(
+                            alert_image,
+                            caption,
+                            captured_at=event_time,
+                        )
+                        print(
+                            "[ALERTA] Telegram: mensaje y "
+                            "foto enviados."
+                        )
+                    except TelegramDeliveryError as exc:
+                        print(
+                            "[ERROR] Telegram: "
+                            f"{exc}"
+                        )
 
             print()
 
