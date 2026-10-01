@@ -82,7 +82,7 @@ def face_worker(source, events, stop, timezone, interval=0.4, cooldown=3):
                 results.clear()
                 gate.absent_since = None
                 if time.monotonic() - last_error >= 10:
-                    report(events, "[ERROR] Cámara/visión no disponible o múltiples rostros. RFID sigue activo.")
+                    report(events, "[ERROR] Cámara/visión no disponible o múltiples rostros. No se cuenta un rechazo.")
                     last_error = time.monotonic()
             else:
                 gate.absent_since = None
@@ -119,7 +119,7 @@ def rfid_worker(reader, registry, events, stop, timezone, interval=0.1):
             except Exception:
                 gate.absent_since = None
                 if time.monotonic() - last_error >= 10:
-                    report(events, "[ERROR] Falló el lector RFID; el reconocimiento facial sigue activo.")
+                    report(events, "[ERROR] Falló el lector RFID. Revisar conexión y cableado; no se cuenta un rechazo.")
                     last_error = time.monotonic()
             stop.wait(interval)
     finally:

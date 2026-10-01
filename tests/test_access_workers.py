@@ -72,6 +72,43 @@ class WorkersTests(unittest.TestCase):
         self.assertEqual(self.decisions(), [])
         registry.authorize.assert_called_once()
 
+    def test_face_fault_does_not_claim_rfid_is_active(self):
+        source = Mock()
+        source.no_face_error = NoFace
+
+        def fail_capture():
+            self.stop.set()
+            raise OSError("camera unavailable")
+
+        source.capture.side_effect = fail_capture
+        face_worker(source, self.queue, self.stop, self.zone, interval=0, cooldown=0)
+        message = self.queue.get_nowait()
+        self.assertIn("Cámara/visión no disponible", message)
+        self.assertIn("No se cuenta un rechazo", message)
+        self.assertNotIn("RFID", message)
+        self.assertNotIn("sigue activo", message)
+        self.assertTrue(self.queue.empty())
+        source.match.assert_not_called()
+
+    def test_rfid_fault_does_not_claim_face_is_active(self):
+        reader = Mock()
+        registry = Mock()
+
+        def fail_poll():
+            self.stop.set()
+            raise OSError("reader unavailable")
+
+        reader.poll.side_effect = fail_poll
+        rfid_worker(reader, registry, self.queue, self.stop, self.zone, interval=0)
+        message = self.queue.get_nowait()
+        self.assertIn("Falló el lector RFID", message)
+        self.assertIn("no se cuenta un rechazo", message)
+        self.assertNotIn("facial", message)
+        self.assertNotIn("sigue activo", message)
+        self.assertTrue(self.queue.empty())
+        registry.authorize.assert_not_called()
+        reader.close.assert_called_once()
+
     def test_face_held_and_camera_fault_not_extra_attempts(self):
         samples = iter(["face"] * 5 + [OSError(), NoFace(), NoFace()] + ["face"] * 3)
         source = Mock()
