@@ -21,8 +21,33 @@ Incluye:
   - `USUARIO VÁLIDO: user_00#`
   - `USUARIO NO AUTORIZADO`
 - Alertas por Telegram fuera del horario permitido, con hora y fotografía.
+- Acceso alternativo por tarjeta RC522 registrada (SPI, Raspberry Pi 3/4).
+- Alerta por tres rechazos consecutivos, combinando reconocimiento facial y RFID.
 
-No incluye GPIO, relé, RFID, Reed switch, detección de anomalías, IA local ni frontend.
+No incluye actuación de relé/cerradura, Reed switch, IA local ni frontend.
+
+## Acceso facial O RFID y tres intentos fallidos
+
+Ver [guía rápida para el equipo](docs/RFID_GUIA_RAPIDA.md) y
+[instructivo completo RC522](docs/INSTALACION_RFID.md) para cableado,
+dependencias, alta/revocación de tarjetas y prueba final. La placa RC522 requiere
+3,3 V y SPI0. No se escribe en las tarjetas; las credenciales se vinculan con los
+usuarios existentes y se guardan mediante HMAC con una clave local separada.
+
+```bash
+python raspberry/runtime_access.py http://192.168.1.95/capture
+```
+
+El comando habilita ambos métodos: basta rostro válido **o** tarjeta registrada.
+El comando anterior `runtime_recognize_espcam.py` sigue disponible en modo facial.
+Se suman globalmente los rechazos de ambos métodos; un acceso válido reinicia el
+contador. Se alerta en el tercero, sexto, noveno... incluso dentro del horario
+permitido. Una tarjeta/rostro sostenido no genera intentos repetidos: retirarlo
+antes de volver a presentar. Las fallas técnicas no cuentan como rechazos.
+
+La alerta horaria se aplica a ambos métodos. Si no se obtiene la fotografía se
+envía texto para no perder el aviso. Todavía se concede autorización lógica por
+consola; falta integrar relé/Reed para abrir y confirmar una apertura física.
 
 ## Alertas por Telegram fuera de horario
 
@@ -53,7 +78,7 @@ export TELEGRAM_CHAT_ID="id_del_chat"
 
 El token y el identificador del chat no deben agregarse al repositorio. Si ambas variables faltan, el reconocimiento continúa y muestra que las alertas están deshabilitadas. Si sólo una está definida, el runtime se detiene para advertir la configuración incompleta.
 
-Para evitar mensajes repetidos mientras una persona permanece frente a la cámara, se aplica una espera de 60 segundos por resultado. Puede ajustarse, por ejemplo:
+Cada presentación produce un intento. Para evitar alertas horarias repetidas en nuevas presentaciones, se aplica una espera de 60 segundos por método/resultado. No suprime la alerta de tres fallos. Puede ajustarse, por ejemplo:
 
 ```bash
 python raspberry/runtime_recognize_espcam.py \
@@ -814,7 +839,7 @@ Porteo del prototipo a Raspberry Pi 4, integración RFID legacy preservando tarj
 
 - GPIO.
 - Relé.
-- RFID.
+- RFID legacy y autenticación criptográfica de tarjetas (RC522 por UID incluido).
 - Reed switch.
 - Detección de anomalías.
 - Isolation Forest.

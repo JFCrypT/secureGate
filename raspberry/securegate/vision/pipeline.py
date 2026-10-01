@@ -16,6 +16,10 @@ YUNET_THRESHOLD = 0.7
 MAX_IMAGE_DIMENSION = 800
 
 
+class NoFaceDetected(RuntimeError):
+    """A valid camera capture without a face, rather than a device error."""
+
+
 def normalize_image(image, max_dimension=MAX_IMAGE_DIMENSION):
     if image is None:
         raise ValueError("La imagen no puede ser None.")
@@ -73,7 +77,7 @@ def extract_embedding_from_image(image, recognizer=None):
     _, faces = detector.detect(image)
 
     if faces is None or len(faces) == 0:
-        raise RuntimeError(
+        raise NoFaceDetected(
             "No se detectó ningún rostro."
         )
 

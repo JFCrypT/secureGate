@@ -4,6 +4,7 @@ from os import environ
 from secrets import token_hex
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 import json
 
 
@@ -87,6 +88,14 @@ class TelegramNotifier:
 
         return cls(config)
 
+    def send_message(self, text):
+        """Alerts must still be delivered when no camera capture is available."""
+        body = urlencode({
+            "chat_id": self.config.chat_id,
+            "text": text,
+        }).encode("utf-8")
+        return self._send("sendMessage", body, "application/x-www-form-urlencoded")
+
     def send_photo(self, image, caption, captured_at=None):
         import cv2
 
@@ -133,17 +142,19 @@ class TelegramNotifier:
             ]
         )
 
+        return self._send(
+            "sendPhoto", body, f"multipart/form-data; boundary={boundary}"
+        )
+
+    def _send(self, method, body, content_type):
         request = Request(
             (
                 "https://api.telegram.org/bot"
-                f"{self.config.bot_token}/sendPhoto"
+                f"{self.config.bot_token}/{method}"
             ),
             data=body,
             headers={
-                "Content-Type": (
-                    "multipart/form-data; "
-                    f"boundary={boundary}"
-                ),
+                "Content-Type": content_type,
                 "Content-Length": str(len(body)),
                 "User-Agent": "secureGate/1.0",
             },
@@ -163,7 +174,7 @@ class TelegramNotifier:
                 "Telegram rechazó el envío "
                 f"(HTTP {exc.code})."
             ) from exc
-        except URLError as exc:
+        except (URLError, TimeoutError, OSError) as exc:
             raise TelegramDeliveryError(
                 "No se pudo conectar con Telegram."
             ) from exc
@@ -172,13 +183,9 @@ class TelegramNotifier:
                 "Telegram devolvió una respuesta inválida."
             ) from exc
 
-        if not payload.get("ok"):
-            description = payload.get(
-                "description",
-                "error sin descripción",
-            )
+        if not isinstance(payload, dict) or not payload.get("ok"):
             raise TelegramDeliveryError(
-                f"Telegram no confirmó el envío: {description}"
+                "Telegram no confirmó el envío."
             )
 
         return payload

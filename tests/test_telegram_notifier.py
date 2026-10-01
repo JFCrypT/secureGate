@@ -1,6 +1,8 @@
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs
+from urllib.error import HTTPError
 from unittest.mock import patch
 import json
 import os
@@ -16,10 +18,15 @@ sys.path.insert(0, str(ROOT_DIR / "raspberry"))
 from securegate.alerts.telegram import (
     TelegramConfigurationError,
     TelegramNotifier,
+    TelegramConfig,
+    TelegramDeliveryError,
 )
 
 
 class FakeResponse:
+    def __init__(self, payload=None):
+        self.payload = {"ok": True} if payload is None else payload
+
     def __enter__(self):
         return self
 
@@ -27,10 +34,39 @@ class FakeResponse:
         return False
 
     def read(self):
-        return json.dumps({"ok": True}).encode("utf-8")
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class TelegramNotifierTests(unittest.TestCase):
+    @patch("securegate.alerts.telegram.urlopen")
+    def test_text_without_photo_and_negative_response(self, urlopen):
+        notifier = TelegramNotifier(TelegramConfig("synthetic-token", "123"))
+        urlopen.return_value = FakeResponse()
+        notifier.send_message("Tres intentos fallidos")
+        request = urlopen.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/sendMessage"))
+        self.assertEqual(parse_qs(request.data.decode())["text"], ["Tres intentos fallidos"])
+        for invalid_payload in ({"ok": False}, []):
+            urlopen.return_value = FakeResponse(invalid_payload)
+            with self.assertRaises(TelegramDeliveryError):
+                notifier.send_message("alerta")
+
+    @patch("securegate.alerts.telegram.urlopen")
+    def test_http_errors_hide_token(self, urlopen):
+        notifier = TelegramNotifier(TelegramConfig("synthetic-secret", "123"))
+        urlopen.side_effect = HTTPError("https://api.telegram.org/botsynthetic-secret", 401, "Unauthorized", {}, None)
+        with self.assertRaises(TelegramDeliveryError) as raised:
+            notifier.send_message("alerta")
+        self.assertNotIn("synthetic-secret", str(raised.exception))
+        self.assertIn("401", str(raised.exception))
+
+    @patch("securegate.alerts.telegram.urlopen")
+    def test_timeout_is_controlled(self, urlopen):
+        urlopen.side_effect = TimeoutError()
+        notifier = TelegramNotifier(TelegramConfig("synthetic", "123"))
+        with self.assertRaises(TelegramDeliveryError):
+            notifier.send_message("alerta")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_missing_environment_disables_notifier(self):
         self.assertIsNone(
