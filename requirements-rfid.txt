@@ -1,0 +1,4 @@
+# Optional: install only on Raspberry Pi 3/4 with Raspberry Pi OS.
+pi-rc522==2.3.0
+spidev==3.8
+RPi.GPIO==0.7.1
