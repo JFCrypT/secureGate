@@ -51,6 +51,7 @@ class CardRegistry:
         connection = sqlite3.connect(self.database, timeout=5)
         try:
             connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 5000")
             with connection:
                 yield connection
         finally:

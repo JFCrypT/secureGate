@@ -109,6 +109,35 @@ class WorkersTests(unittest.TestCase):
         registry.authorize.assert_not_called()
         reader.close.assert_called_once()
 
+    def test_pending_enrollment_consumes_card_without_access_event(self):
+        reader = Mock()
+        calls = [0]
+        def poll():
+            calls[0] += 1
+            if calls[0] == 1:
+                return "01020304"
+            self.stop.set()
+            return None
+        reader.poll.side_effect = poll
+        registry = Mock()
+        enrollment = Mock()
+        enrollment.pending.return_value = {
+            "request_id": 7,
+            "external_id": "user_010",
+        }
+        rfid_worker(
+            reader,
+            registry,
+            self.queue,
+            self.stop,
+            self.zone,
+            interval=0,
+            enrollment=enrollment,
+        )
+        registry.enroll.assert_called_once_with("user_010", "01020304")
+        enrollment.complete.assert_called_once_with(7)
+        self.assertEqual(self.decisions(), [])
+
     def test_face_held_and_camera_fault_not_extra_attempts(self):
         samples = iter(["face"] * 5 + [OSError(), NoFace(), NoFace()] + ["face"] * 3)
         source = Mock()

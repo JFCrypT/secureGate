@@ -23,8 +23,15 @@ Incluye:
 - Alertas por Telegram fuera del horario permitido, con hora y fotografía.
 - Acceso alternativo por tarjeta RC522 registrada (SPI, Raspberry Pi 3/4).
 - Alerta por tres rechazos consecutivos, combinando reconocimiento facial y RFID.
+- Control de puerta con modo simulado seguro y driver GPIO configurable.
+- Registro persistente de accesos y exportación de informes CSV desde SQLite.
+- API REST protegida para usuarios y registros, con documentación OpenAPI.
+- Alta RFID solicitada desde frontend sin exponer el UID al navegador.
+- Heartbeat para que el tablero informe si el runtime está realmente activo.
 
-No incluye actuación de relé/cerradura, Reed switch, IA local ni frontend.
+La actuación GPIO está implementada pero todavía requiere confirmar el módulo,
+pin y polaridad del relé antes de habilitarla físicamente. No incluye Reed switch,
+IA local ni frontend.
 
 ## Acceso facial O RFID y tres intentos fallidos
 
@@ -46,8 +53,64 @@ permitido. Una tarjeta/rostro sostenido no genera intentos repetidos: retirarlo
 antes de volver a presentar. Las fallas técnicas no cuentan como rechazos.
 
 La alerta horaria se aplica a ambos métodos. Si no se obtiene la fotografía se
-envía texto para no perder el aviso. Todavía se concede autorización lógica por
-consola; falta integrar relé/Reed para abrir y confirmar una apertura física.
+envía texto para no perder el aviso. Por seguridad, el runtime comienza con la
+puerta en modo simulado. La apertura física se habilita explícitamente cuando
+se haya validado el relé; el Reed todavía está pendiente.
+
+## Control de puerta y registros
+
+Sin indicar opciones de relé, una credencial válida muestra la orden pero no
+activa GPIO:
+
+```bash
+python raspberry/runtime_access.py --methods rfid
+```
+
+Los intentos se guardan en `access_events`, incluyendo fecha con zona horaria,
+método, usuario pseudonimizado, autorización, horario restringido, alerta y
+resultado de puerta. Se pueden consultar y exportar sin frontend:
+
+```bash
+python admin/access_report.py --limit 50
+python admin/access_report.py --date 2026-10-01 --csv informe.csv
+```
+
+El modo físico exige indicar el GPIO en numeración BCM y la polaridad confirmada:
+
+```bash
+python raspberry/runtime_access.py --methods rfid \
+  --door-mode gpio \
+  --relay-pin PIN_BCM_CONFIRMADO \
+  --relay-active high \
+  --door-open-seconds 3
+```
+
+No usar ese comando hasta verificar el módulo. El GPIO entrega 3,3 V; los 5 V
+del relé y los 12 V de la cerradura no deben ingresar al GPIO.
+
+## Backend para el frontend
+
+La interfaz no debe acceder directamente a SQLite, GPIO, UID ni embeddings. La
+API REST permite trabajar con usuarios y registros mediante JSON:
+
+```bash
+python -m pip install -r requirements-api.txt
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+export SECUREGATE_API_TOKEN="TOKEN_GENERADO"
+python raspberry/backend_api.py
+```
+
+La documentación interactiva queda en `http://127.0.0.1:8000/docs`. Para usar
+otro equipo de la red y configurar CORS, seguir [API_FRONTEND.md](docs/API_FRONTEND.md).
+No se expone todavía apertura remota: el GPIO debe tener un único propietario.
+El despliegue completo sobre Raspberry Pi 4 se documenta en
+[DESPLIEGUE_RPI4.md](docs/DESPLIEGUE_RPI4.md).
+
+Para preparar los veinte usuarios del prototipo sin crear credenciales falsas:
+
+```bash
+python admin/seed_demo_users.py
+```
 
 ## Alertas por Telegram fuera de horario
 
@@ -269,9 +332,11 @@ No se observó solapamiento en este conjunto experimental.
 
 ## Logs
 
-El Prototipo v1 muestra resultados y eventos por consola, pero no implementa todavía un sistema de logs persistentes.
-
-La definición, almacenamiento, análisis y eventual protección de logs de accesos, rechazos, anomalías y eventos del sistema corresponde al **GRUPO 3 — Detección de anomalías, alertas, logs e investigación de IA local**.
+Las decisiones del runtime unificado se almacenan en la tabla `access_events`.
+El comando `admin/access_report.py` permite obtener un informe por consola o CSV.
+La detección avanzada de anomalías y el análisis de eventos continúa
+correspondiendo al **GRUPO 3 — Detección de anomalías, alertas, logs e
+investigación de IA local**.
 
 ## Runtime continuo
 

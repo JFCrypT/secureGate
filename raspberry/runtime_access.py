@@ -15,10 +15,15 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from securegate.access import AccessController, AccessEvent, PresenceGate
+from securegate.access_log import AccessLogRepository
 from securegate.alerts import DEFAULT_TIMEZONE, TelegramNotifier, load_timezone
+from securegate.alerts.schedule import is_restricted_time
 from securegate.alerts.telegram import TelegramDeliveryError
+from securegate.door import DoorControlError, create_door
+from securegate.rfid.enrollment import RFIDEnrollmentRepository
 from securegate.rfid.registry import CardRegistry, DEFAULT_DB, DEFAULT_KEY
 from securegate.rfid.reader import RC522Reader
+from securegate.runtime_status import RuntimeStatusRepository
 
 
 class FaceSource:
@@ -99,7 +104,15 @@ def face_worker(source, events, stop, timezone, interval=0.4, cooldown=3):
         report(events, "[ERROR] El proceso de reconocimiento se detuvo; reiniciar y revisar modelos.")
 
 
-def rfid_worker(reader, registry, events, stop, timezone, interval=0.1):
+def rfid_worker(
+    reader,
+    registry,
+    events,
+    stop,
+    timezone,
+    interval=0.1,
+    enrollment=None,
+):
     gate = PresenceGate(release_seconds=0.8)
     last_error = float("-inf")
     try:
@@ -110,6 +123,45 @@ def rfid_worker(reader, registry, events, stop, timezone, interval=0.1):
                 if uid is None:
                     gate.observe(None)
                 elif gate.observe(uid):
+                    request = None
+                    if enrollment is not None:
+                        try:
+                            request = enrollment.pending()
+                        except (OSError, ValueError, sqlite3.Error):
+                            report(
+                                events,
+                                "[ERROR] No se pudo consultar la solicitud RFID; "
+                                "no se procesa la tarjeta.",
+                            )
+                            continue
+                    if request:
+                        try:
+                            registry.enroll(request["external_id"], uid)
+                            enrollment.complete(request["request_id"])
+                        except ValueError:
+                            try:
+                                enrollment.fail(
+                                    request["request_id"], "card_unavailable"
+                                )
+                            except Exception:
+                                pass
+                            report(
+                                events,
+                                "[ERROR] No se pudo asociar la tarjeta. "
+                                "La solicitud RFID quedó rechazada.",
+                            )
+                        except (OSError, sqlite3.Error):
+                            report(
+                                events,
+                                "[ERROR] Falló la base durante el enrolamiento RFID.",
+                            )
+                        else:
+                            report(
+                                events,
+                                "[RFID] Tarjeta asociada correctamente a "
+                                f"{request['external_id']}.",
+                            )
+                        continue
                     try:
                         user = registry.authorize(uid)
                     except (OSError, ValueError, sqlite3.Error):
@@ -179,8 +231,17 @@ def nonnegative_float(value):
 
 def main(default_mode="both"):
     parser = argparse.ArgumentParser(description="secureGate: reconocimiento facial O tarjeta RC522.")
-    parser.add_argument("url", nargs="?", help="URL /capture de ESP-CAM.")
-    parser.add_argument("--methods", choices=("both", "face", "rfid"), default=default_mode)
+    parser.add_argument(
+        "url",
+        nargs="?",
+        default=os.environ.get("SECUREGATE_ESP_CAM_URL"),
+        help="URL /capture de ESP-CAM.",
+    )
+    parser.add_argument(
+        "--methods",
+        choices=("both", "face", "rfid"),
+        default=os.environ.get("SECUREGATE_METHODS", default_mode),
+    )
     parser.add_argument("--timeout", type=positive_float, default=5.0)
     parser.add_argument("--interval", type=positive_float, default=0.4)
     parser.add_argument("--cooldown", type=nonnegative_float, default=3.0)
@@ -188,28 +249,72 @@ def main(default_mode="both"):
     parser.add_argument("--timezone", default=os.environ.get("SECUREGATE_TIMEZONE", DEFAULT_TIMEZONE))
     parser.add_argument("--rfid-database", type=Path, default=DEFAULT_DB)
     parser.add_argument("--rfid-key", type=Path, default=DEFAULT_KEY)
+    parser.add_argument(
+        "--door-mode",
+        choices=("simulate", "gpio"),
+        default=os.environ.get("SECUREGATE_DOOR_MODE", "simulate"),
+        help="simulate no energiza GPIO; gpio acciona un relé configurado.",
+    )
+    parser.add_argument(
+        "--relay-pin",
+        type=int,
+        default=os.environ.get("SECUREGATE_RELAY_PIN"),
+        help="Número GPIO BCM. Obligatorio únicamente en modo gpio.",
+    )
+    parser.add_argument(
+        "--relay-active",
+        choices=("high", "low"),
+        default=os.environ.get("SECUREGATE_RELAY_ACTIVE", "high"),
+        help="Nivel eléctrico que activa el módulo de relé.",
+    )
+    parser.add_argument(
+        "--door-open-seconds",
+        type=positive_float,
+        default=os.environ.get("SECUREGATE_DOOR_OPEN_SECONDS", "3"),
+    )
     args = parser.parse_args()
     if args.methods != "rfid" and not args.url:
         parser.error("Se requiere URL de cámara para reconocimiento facial.")
 
     reader = None
+    door = None
+    runtime_status = None
     try:
         timezone = load_timezone(args.timezone)
         notifier = TelegramNotifier.from_environment()
+        access_log = AccessLogRepository(args.rfid_database)
+        runtime_status = RuntimeStatusRepository(args.rfid_database)
+        door = create_door(
+            args.door_mode,
+            pin=args.relay_pin,
+            active_high=args.relay_active == "high",
+            duration_seconds=args.door_open_seconds,
+        )
         face = FaceSource(args.url, args.timeout) if args.methods != "rfid" else None
         registry = None
+        enrollment = None
         if args.methods != "face":
             registry = CardRegistry(args.rfid_database, args.rfid_key)
+            enrollment = RFIDEnrollmentRepository(args.rfid_database)
             reader = RC522Reader()
     except Exception as exc:
         if reader:
             reader.close()
+        if door:
+            door.close()
         # Startup has no network Telegram calls; configuration errors contain no token.
         print(f"[ERROR] No se pudo iniciar secureGate: {exc}")
         return 1
 
     print(f"[INFO] Métodos: {args.methods}; zona horaria: {args.timezone}")
-    print("[INFO] Autorización alternativa: facial O RFID; no abre un relé todavía.")
+    print("[INFO] Autorización alternativa: facial O RFID.")
+    if args.door_mode == "simulate":
+        print("[INFO] Puerta en simulación: no se activa ningún GPIO.")
+    else:
+        print(
+            f"[INFO] Puerta física: GPIO BCM {args.relay_pin}, "
+            f"activo en {args.relay_active.upper()}.",
+        )
     print("[INFO] Retirar rostro/tarjeta entre intentos. Ctrl+C para detener.")
     print("[INFO] Telegram habilitado." if notifier else "[ADVERTENCIA] Telegram deshabilitado: faltan token y chat.")
     events = Queue(maxsize=32)
@@ -223,9 +328,13 @@ def main(default_mode="both"):
             face, events, stop, timezone, args.interval, args.cooldown,
         ), name="securegate-face", daemon=True))
     if reader:
-        workers.append(Thread(target=rfid_worker, args=(
-            reader, registry, events, stop, timezone,
-        ), name="securegate-rfid", daemon=True))
+        workers.append(Thread(
+            target=rfid_worker,
+            args=(reader, registry, events, stop, timezone),
+            kwargs={"enrollment": enrollment},
+            name="securegate-rfid",
+            daemon=True,
+        ))
     sender = None
     if notifier:
         capture = None
@@ -241,7 +350,18 @@ def main(default_mode="both"):
     for worker in workers:
         worker.start()
     try:
+        runtime_status.update("running", args.methods, args.door_mode)
+    except (OSError, ValueError, sqlite3.Error):
+        print("[ADVERTENCIA] No se pudo publicar el estado inicial del runtime.")
+    last_heartbeat = time.monotonic()
+    try:
         while True:
+            if time.monotonic() - last_heartbeat >= 5:
+                try:
+                    runtime_status.update("running", args.methods, args.door_mode)
+                except (OSError, ValueError, sqlite3.Error):
+                    print("[ADVERTENCIA] No se pudo actualizar el heartbeat.", flush=True)
+                last_heartbeat = time.monotonic()
             try:
                 event = events.get(timeout=0.5)
             except Empty:
@@ -254,9 +374,8 @@ def main(default_mode="both"):
                 continue
             result = f"USUARIO VÁLIDO: {event.user}" if event.granted else "USUARIO NO AUTORIZADO"
             alert = controller.process(event)
+            restricted = is_restricted_time(event.occurred_at)
             print(f"[ACCESO] {event.method}: {result}; rechazos consecutivos={controller.failures}", flush=True)
-            # Integration point for the actuator group: event.granted alone is
-            # the credential decision. Telegram never decides physical opening.
             if alert:
                 print(f"[ALERTA] {'; '.join(alert.reasons)}", flush=True)
                 if notifier:
@@ -264,6 +383,24 @@ def main(default_mode="both"):
                         alerts.put_nowait(alert)
                     except Full:
                         print("[ERROR] Cola Telegram llena; alerta no enviada. Revisar conexión.", flush=True)
+
+            door_status = "not_requested"
+            if event.granted:
+                try:
+                    door_status = door.open().status
+                except DoorControlError as exc:
+                    door_status = "error"
+                    print(f"[ERROR] Puerta: {exc}", flush=True)
+
+            try:
+                access_log.record(
+                    event,
+                    restricted,
+                    alert.reasons if alert else (),
+                    door_status,
+                )
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                print(f"[ERROR] No se pudo guardar el registro de acceso: {exc}", flush=True)
     except KeyboardInterrupt:
         print("\n[INFO] Deteniendo secureGate.")
         return 0
@@ -276,6 +413,16 @@ def main(default_mode="both"):
             sender.join(timeout=12)
             if sender.is_alive():
                 print("[ADVERTENCIA] Hay alertas pendientes que se perderán al salir.")
+        if door:
+            try:
+                door.close()
+            except Exception:
+                print("[ADVERTENCIA] No se pudo liberar limpiamente el GPIO del relé.")
+        if runtime_status:
+            try:
+                runtime_status.update("stopped", args.methods, args.door_mode)
+            except (OSError, ValueError, sqlite3.Error):
+                pass
 
 
 if __name__ == "__main__":

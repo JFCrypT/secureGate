@@ -6,11 +6,11 @@ La placa de la foto es RFID-RC522 V1.33. El chip trabaja con tarjetas ISO/IEC
 verificar compatibilidad con `scan`. Este adaptador admite UID de 4 o 7 bytes.
 No admite tarjetas de 125 kHz, Pi Pico ni garantiza Raspberry Pi 5.
 
-El resultado es autorización lógica por **rostro O tarjeta registrada**.
-No hay driver de relé/cerradura ni Reed en el repositorio original. El grupo de
-actuadores debe conectar su apertura a `AccessEvent.granted` en
-`raspberry/runtime_access.py`; no anunciar apertura física antes de esa integración.
-Telegram no decide ni condiciona la apertura.
+El resultado es autorización por **rostro O tarjeta registrada**. El control de
+puerta comienza en modo simulado y registra la orden sin energizar GPIO. Existe
+un driver GPIO configurable, pero no se debe habilitar hasta confirmar el módulo,
+pin BCM y polaridad del relé. El Reed todavía está pendiente. Telegram no decide
+ni condiciona la apertura.
 
 ## 1. Conectar con la Raspberry apagada y desenchufada
 
@@ -67,7 +67,7 @@ sudo apt update
 sudo apt install -y python3-venv python3-dev build-essential
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt -r requirements-rfid.txt
+python -m pip install -r requirements.txt -r requirements-rfid.txt -r requirements-api.txt
 ```
 
 Si el entorno `.venv` ya existe, conservarlo y activar el existente.
@@ -103,7 +103,7 @@ Registrar la tarjeta blanca para un usuario, acercándola al lector:
 python admin/manage_rfid.py enroll user_001
 ```
 
-Repetir para el llavero. Puede pertenecer al mismo usuario o a otro:
+Repetir para el llavero. Puede asociarse al mismo usuario o a otro:
 
 ```bash
 python admin/manage_rfid.py enroll user_002
@@ -141,11 +141,33 @@ python raspberry/runtime_access.py http://192.168.1.95/capture
 ```
 
 Ese comando habilita **ambos métodos**. La URL debe coincidir con su ESP-CAM.
+La puerta permanece en simulación y cada decisión queda en `access_events`.
 Para probar RFID sin modelos/cámara:
 
 ```bash
 python raspberry/runtime_access.py --methods rfid
 ```
+
+Consultar o exportar registros:
+
+```bash
+python admin/access_report.py --limit 50
+python admin/access_report.py --date 2026-10-01 --csv informe.csv
+```
+
+Después de validar eléctricamente el relé, el modo físico se ejecuta indicando
+el pin en numeración BCM y si se activa en alto o bajo:
+
+```bash
+python raspberry/runtime_access.py --methods rfid \
+  --door-mode gpio \
+  --relay-pin PIN_BCM_CONFIRMADO \
+  --relay-active high \
+  --door-open-seconds 3
+```
+
+`PIN_BCM_CONFIRMADO` es un marcador, no un comando listo para copiar. Sustituirlo
+recién después de revisar la placa. El GPIO es de 3,3 V: no aplicarle 5 V ni 12 V.
 
 Para rostro solamente (comando anterior compatible):
 
@@ -157,6 +179,10 @@ Las variables duran esa sesión. Para instalación permanente, el encargado del
 servicio debe cargarlas desde un archivo privado del servicio, no desde Git.
 Si faltan ambas, las alertas aparecen sólo en consola. Si falta una, el arranque
 falla para evitar una configuración incompleta.
+
+La API para frontend se ejecuta en un proceso separado y comparte SQLite en
+modo WAL. Ver [API_FRONTEND.md](API_FRONTEND.md) para token, CORS, endpoints y
+documentación OpenAPI. La API no controla todavía el relé ni abre el RC522.
 
 ## 6. Comprobar el resultado
 

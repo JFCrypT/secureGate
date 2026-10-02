@@ -1,0 +1,3 @@
+# Backend REST para el equipo de frontend.
+fastapi
+uvicorn

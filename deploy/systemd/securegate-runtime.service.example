@@ -1,0 +1,22 @@
+[Unit]
+Description=secureGate RFID, rostro, alertas y relé
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=USUARIO_RPI
+Group=USUARIO_RPI
+SupplementaryGroups=spi gpio
+WorkingDirectory=/home/USUARIO_RPI/secureGate
+EnvironmentFile=/etc/securegate/securegate.env
+ExecStart=/home/USUARIO_RPI/secureGate/.venv/bin/python raspberry/runtime_access.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

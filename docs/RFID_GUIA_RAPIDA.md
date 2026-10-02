@@ -42,10 +42,18 @@ python raspberry/runtime_access.py http://192.168.1.95/capture
    reinicia la cuenta. Para aislar RFID: `python raspberry/runtime_access.py
    --methods rfid`. Si falla la foto se envía texto. Detener con Ctrl+C.
 
+Por defecto la puerta queda en simulación y cada intento se registra en SQLite.
+Consultar los últimos eventos con:
+
+```bash
+python admin/access_report.py --limit 50
+```
+
 Conservar `local/keys/k_rfid` y la base fuera de Git; son necesarias en cada
 Raspberry que valide las mismas tarjetas. Los UID pueden clonarse.
-El código entrega autorización lógica; el relé/Reed aún corresponde al grupo
-de actuadores. Completar la prueba física antes de ponerlo en servicio.
+El driver GPIO del relé requiere confirmar pin BCM y polaridad antes de habilitar
+`--door-mode gpio`. El Reed aún corresponde al grupo de actuadores. Completar la
+prueba física antes de ponerlo en servicio.
 
 Si falta `.venv`, hay errores de permisos, necesitan revocar una tarjeta o
 consultar cómo probar la rama: [instructivo completo](INSTALACION_RFID.md).
