@@ -1,250 +1,172 @@
 # secureGate
 
-Sistema de control de acceso seguro para el ingreso al **Laboratorio de Mecatrónica de la Facultad de Ingeniería del Ejército**.
+Sistema de control de acceso seguro desarrollado actualmente sobre **hardware propio**, con proyección a una implementación final en el Laboratorio de Mecatrónica.
 
 ## Estado actual
 
-El **Prototipo v1** se encuentra funcional en notebook/Xubuntu y preparado para validación final sobre Raspberry Pi 3.
+La versión integrada actual reúne en una misma solución:
 
-Incluye:
-- ESP-CAM como sensor óptico.
+- ESP32-CAM como sensor óptico.
 - YuNet para detección facial.
-- SFace para extracción de embeddings.
-- Enrolamiento offline.
-- SQLite.
-- Embeddings cifrados con AES-256-GCM.
-- `K_bio` global para la base biométrica.
-- Identificación 1:N.
-- Runtime continuo.
-- Regla temporal 2-de-3 frames.
-- Salida por consola:
-  - `USUARIO VÁLIDO: user_00#`
-  - `USUARIO NO AUTORIZADO`
-- Alertas por Telegram fuera del horario permitido, con hora y fotografía.
-- Acceso alternativo por tarjeta RC522 registrada (SPI, Raspberry Pi 3/4).
-- Alerta por tres rechazos consecutivos, combinando reconocimiento facial y RFID.
-- Control de puerta con modo simulado seguro y driver GPIO configurable.
-- Registro persistente de accesos y exportación de informes CSV desde SQLite.
-- API REST protegida para usuarios y registros, con documentación OpenAPI.
-- Alta RFID solicitada desde frontend sin exponer el UID al navegador.
-- Heartbeat para que el tablero informe si el runtime está realmente activo.
+- SFace para extracción de embeddings faciales.
+- Embeddings de 128 componentes.
+- Enrolamiento biométrico offline.
+- SQLite como base de datos común.
+- Templates biométricos cifrados con AES-256-GCM.
+- `K_bio` separada de la base de datos y de Git.
+- Acceso alternativo mediante RFID RC522.
+- UID RFID no almacenado en claro.
+- `HMAC-SHA-256(K_rfid, UID)`.
+- `K_rfid` independiente de `K_bio`.
+- Runtime unificado: **biometría OR RFID**.
+- Regla de consenso biométrica 2-de-3 frames.
+- Alertas por Telegram.
+- Registro persistente de eventos de acceso.
+- API REST para frontend.
+- Heartbeat del runtime.
+- Control de puerta en modo simulado y driver GPIO configurable.
+- Tests automatizados.
 
-La actuación GPIO está implementada pero todavía requiere confirmar el módulo,
-pin y polaridad del relé antes de habilitarla físicamente. No incluye Reed switch,
-IA local ni frontend.
+La actuación física mediante relé está implementada en software, pero permanece en **modo simulado por defecto** hasta validar eléctricamente módulo, GPIO y polaridad. El Reed switch y la interfaz web visual continúan pendientes. La investigación de IA local sigue siendo opcional.
 
-## Acceso facial O RFID y tres intentos fallidos
-
-Ver [guía rápida para el equipo](docs/RFID_GUIA_RAPIDA.md) y
-[instructivo completo RC522](docs/INSTALACION_RFID.md) para cableado,
-dependencias, alta/revocación de tarjetas y prueba final. La placa RC522 requiere
-3,3 V y SPI0. No se escribe en las tarjetas; las credenciales se vinculan con los
-usuarios existentes y se guardan mediante HMAC con una clave local separada.
-
-```bash
-python raspberry/runtime_access.py http://192.168.1.95/capture
-```
-
-El comando habilita ambos métodos: basta rostro válido **o** tarjeta registrada.
-El comando anterior `runtime_recognize_espcam.py` sigue disponible en modo facial.
-Se suman globalmente los rechazos de ambos métodos; un acceso válido reinicia el
-contador. Se alerta en el tercero, sexto, noveno... incluso dentro del horario
-permitido. Una tarjeta/rostro sostenido no genera intentos repetidos: retirarlo
-antes de volver a presentar. Las fallas técnicas no cuentan como rechazos.
-
-La alerta horaria se aplica a ambos métodos. Si no se obtiene la fotografía se
-envía texto para no perder el aviso. Por seguridad, el runtime comienza con la
-puerta en modo simulado. La apertura física se habilita explícitamente cuando
-se haya validado el relé; el Reed todavía está pendiente.
-
-## Control de puerta y registros
-
-Sin indicar opciones de relé, una credencial válida muestra la orden pero no
-activa GPIO:
-
-```bash
-python raspberry/runtime_access.py --methods rfid
-```
-
-Los intentos se guardan en `access_events`, incluyendo fecha con zona horaria,
-método, usuario pseudonimizado, autorización, horario restringido, alerta y
-resultado de puerta. Se pueden consultar y exportar sin frontend:
-
-```bash
-python admin/access_report.py --limit 50
-python admin/access_report.py --date 2026-10-01 --csv informe.csv
-```
-
-El modo físico exige indicar el GPIO en numeración BCM y la polaridad confirmada:
-
-```bash
-python raspberry/runtime_access.py --methods rfid \
-  --door-mode gpio \
-  --relay-pin PIN_BCM_CONFIRMADO \
-  --relay-active high \
-  --door-open-seconds 3
-```
-
-No usar ese comando hasta verificar el módulo. El GPIO entrega 3,3 V; los 5 V
-del relé y los 12 V de la cerradura no deben ingresar al GPIO.
-
-## Backend para el frontend
-
-La interfaz no debe acceder directamente a SQLite, GPIO, UID ni embeddings. La
-API REST permite trabajar con usuarios y registros mediante JSON:
-
-```bash
-python -m pip install -r requirements-api.txt
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-export SECUREGATE_API_TOKEN="TOKEN_GENERADO"
-python raspberry/backend_api.py
-```
-
-La documentación interactiva queda en `http://127.0.0.1:8000/docs`. Para usar
-otro equipo de la red y configurar CORS, seguir [API_FRONTEND.md](docs/API_FRONTEND.md).
-No se expone todavía apertura remota: el GPIO debe tener un único propietario.
-El despliegue completo sobre Raspberry Pi 4 se documenta en
-[DESPLIEGUE_RPI4.md](docs/DESPLIEGUE_RPI4.md).
-
-Para preparar los veinte usuarios del prototipo sin crear credenciales falsas:
-
-```bash
-python admin/seed_demo_users.py
-```
-
-## Alertas por Telegram fuera de horario
-
-El runtime puede avisar a un chat de Telegram cuando detecta un intento de ingreso en estos horarios:
+## Arquitectura general
 
 ```text
-Lunes a viernes: 21:00 a 05:59
-Sábados y domingos: 17:00 a 08:59
+                         INTERNET
+                            │
+                            ▼
+                  TP-Link Router / AP
+                      192.168.1.1
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+            Wi-Fi                       LAN/Wi-Fi
+              │                           │
+              ▼                           ▼
+       ESP32-CAM                     Raspberry Pi 3B
+       192.168.1.95                  192.168.1.40
+       - OV2640                      - secureGate
+       - /capture                    - YuNet + SFace
+       - JPEG HTTP                   - SQLite
+              │                      - RFID RC522
+              └──── HTTP /capture ──►- Telegram
+                                     - API REST
+                                     - logs
+                                     - decisión de acceso
+                                     - control de puerta
+                                          │
+                                          ▼
+                                  relé / cerradura
+                                  (simulado por defecto)
 ```
 
-Cada alerta incluye:
+El RC522 se conecta directamente a la Raspberry Pi mediante SPI. La ESP32-CAM queda dedicada a captura de imagen.
 
-- aviso de ingreso fuera de horario;
-- fecha y hora local;
-- resultado del reconocimiento;
-- fotografía capturada por la ESP-CAM.
-
-La zona horaria predeterminada es `America/Argentina/Buenos_Aires`. Puede cambiarse con `SECUREGATE_TIMEZONE` o con la opción `--timezone`.
-
-### Configuración segura
-
-Crear un bot con `@BotFather`, iniciar una conversación con el bot y definir las variables sólo en la Raspberry Pi:
-
-```bash
-export TELEGRAM_BOT_TOKEN="token_del_bot"
-export TELEGRAM_CHAT_ID="id_del_chat"
-```
-
-El token y el identificador del chat no deben agregarse al repositorio. Si ambas variables faltan, el reconocimiento continúa y muestra que las alertas están deshabilitadas. Si sólo una está definida, el runtime se detiene para advertir la configuración incompleta.
-
-Cada presentación produce un intento. Para evitar alertas horarias repetidas en nuevas presentaciones, se aplica una espera de 60 segundos por método/resultado. No suprime la alerta de tres fallos. Puede ajustarse, por ejemplo:
-
-```bash
-python raspberry/runtime_recognize_espcam.py \
-  http://192.168.1.95/capture \
-  --alert-cooldown 120
-```
-
-## Arquitectura del prototipo
+## Flujo de acceso
 
 ```text
-NOTEBOOK / ADMIN
-│
-├── fotos
-├── YuNet + SFace
-├── embeddings
-├── validación
-├── AES-256-GCM
-└── securegate.db
-        │
-        │ transferencia manual
-        ▼
-Raspberry Pi 3
-│
-├── securegate.db
-├── K_bio
-├── modelos YuNet/SFace
-└── runtime continuo
-        │
-        ▼
-ESP-CAM
-192.168.1.95
-/capture
+Usuario
+  │
+  ├── rostro ──► ESP32-CAM ──► YuNet + SFace ──► matching biométrico
+  │
+  └── tarjeta ─► RC522 ──────► HMAC UID ───────► lookup RFID
+                                      │
+                         BIOMETRÍA OR RFID
+                                      │
+                                      ▼
+                           ACCESO AUTORIZADO
+                                      │
+                     ┌────────────────┼───────────────┐
+                     │                │               │
+                     ▼                ▼               ▼
+                 puerta/relé       logs          Telegram
+                                     │
+                                     ▼
+                                  API REST
+                                     │
+                                     ▼
+                                  frontend
 ```
 
-La Raspberry Pi 3 no necesita fotografías de enrolamiento.
+No es 2FA: basta un rostro autorizado **o** una tarjeta RFID autorizada.
 
-## ESP-CAM
+## Base de datos
 
-Firmware desarrollado con PlatformIO.
-
-IP reservada por DHCP:
+La base operativa es:
 
 ```text
-192.168.1.95
+data/db/securegate.db
 ```
 
-Endpoints:
+La biometría y RFID se almacenan en tablas distintas dentro de la misma base.
+
+Tablas principales:
 
 ```text
-/
-→ healthcheck
-
-/capture
-→ captura JPEG
+users
+biometric_templates
+rfid_credentials
+access_events
+rfid_enrollment_requests
+runtime_status
 ```
 
-Resolución validada:
+`rfid_credentials` se crea al inicializar el módulo RFID mediante `CardRegistry` / `admin/manage_rfid.py`.
+
+La tabla `users` funciona como identidad común. Un mismo `user_0##` puede tener biometría, RFID o ambas.
+
+## Biometría
+
+### Pipeline
 
 ```text
-640x480
-```
-
-La ESP-CAM sólo captura y entrega imágenes. La biometría se procesa en notebook/Raspberry.
-
-## Pipeline facial
-
-```text
-frame
+imagen
 ↓
 normalización
 ↓
-lado mayor máximo = 800 px
-↓
 YuNet
 ↓
-alineación
+detección y alineación
 ↓
 SFace
 ↓
 embedding 128D
 ```
 
-Parámetros del prototipo:
+Parámetros actuales:
 
 ```text
 OpenCV = 4.11.0
 YuNet threshold = 0.7
-Métrica SFace = similitud coseno
-Threshold SFace = 0.45
-Regla temporal = 2 de 3 frames
+SFace = similitud coseno
+Threshold = 0.45
+Regla de consenso = 2 de 3 frames
 ```
 
-## Enrolamiento
+### Enrolamiento
 
-Usuarios pseudonimizados:
+Las fotografías se procesan únicamente en el equipo administrativo.
+
+Estructura:
 
 ```text
-user_001
-user_002
-user_003
+data/enrollment/user_###/
+├── 01.jpg
+├── 02.jpg
+├── 03.jpg
+├── 04.jpg
+└── 05.jpg
 ```
 
-Estado actual:
+Comando:
+
+```bash
+python admin/enroll_user.py \
+  user_### \
+  data/enrollment/user_###
+```
+
+Estado biométrico validado:
 
 ```text
 user_001 → 5 templates
@@ -259,156 +181,306 @@ Total:
 20 templates activos
 ```
 
-El enrolamiento es incremental y no sobrescribe automáticamente usuarios existentes.
+Las fotografías de enrolamiento no son necesarias en la Raspberry Pi de operación.
 
-## Seguridad biométrica
+### Protección criptográfica
 
-Los embeddings no se almacenan en claro.
+Cada embedding de 128 componentes se serializa y cifra:
 
 ```text
 embedding
 ↓
+float32 → bytes
+↓
 AES-256-GCM
+↓
+ciphertext
 ↓
 SQLite
 ```
 
 `K_bio`:
-- 256 bits.
-- Global para la base biométrica.
-- Fuera de SQLite.
-- Fuera de Git.
-- Ruta local: `local/keys/k_bio`.
-- Se transfiere manualmente a Raspberry Pi.
 
-Cada template usa un nonce GCM único.
+- 256 bits;
+- global para la base biométrica;
+- almacenada localmente;
+- fuera de SQLite;
+- fuera de Git;
+- ruta local: `local/keys/k_bio`.
 
-## Validación criptográfica
+Cada template usa un nonce GCM único. Los embeddings se descifran únicamente de forma temporal en RAM durante el matching y no se persisten en claro.
 
-Round-trip:
+## RFID RC522
 
-```text
-embedding
-→ cifrado
-→ SQLite
-→ lectura
-→ descifrado
-→ embedding recuperado
-```
-
-Resultado:
+El RC522 se conecta a la Raspberry Pi por SPI:
 
 ```text
-Embedding: 128 dimensiones
-Ciphertext: 528 bytes
-Nonce: 12 bytes
-Igualdad de bytes: True
-Igualdad de arrays: True
-PASS
+RC522        Raspberry Pi
+-------------------------------
+3.3V    →    Pin 1
+RST     →    Pin 22 / GPIO25
+GND     →    Pin 6
+IRQ     →    sin conectar
+MISO    →    Pin 21 / GPIO9
+MOSI    →    Pin 19 / GPIO10
+SCK     →    Pin 23 / GPIO11
+SDA/CS  →    Pin 24 / GPIO8 / CE0
 ```
 
-## Validación biométrica offline
+**Nunca alimentar el RC522 con 5 V.**
 
-La calibración de threshold documentada a continuación se realizó antes de incorporar `user_004`, por lo que corresponde al conjunto experimental original:
-
-```text
-3 usuarios
-5 imágenes por usuario
-15 muestras
-30 comparaciones genuinas
-75 impostoras
-105 totales
-```
-
-Coseno:
-
-```text
-genuino mínimo  = 0.540249
-impostor máximo = 0.329046
-margen          = 0.211203
-```
-
-No se observó solapamiento en este conjunto experimental.
-
-## Logs
-
-Las decisiones del runtime unificado se almacenan en la tabla `access_events`.
-El comando `admin/access_report.py` permite obtener un informe por consola o CSV.
-La detección avanzada de anomalías y el análisis de eventos continúa
-correspondiendo al **GRUPO 3 — Detección de anomalías, alertas, logs e
-investigación de IA local**.
-
-## Runtime continuo
-
-Archivo:
-
-```text
-raspberry/runtime_recognize_espcam.py
-```
-
-Ejecución:
+Inicialización:
 
 ```bash
-python raspberry/runtime_recognize_espcam.py \
+python admin/manage_rfid.py init
+```
+
+Enrolamiento:
+
+```bash
+python admin/manage_rfid.py enroll user_001
+```
+
+El UID no se almacena en claro:
+
+```text
+UID
+↓
+HMAC-SHA-256(K_rfid, UID)
+↓
+uid_digest
+↓
+rfid_credentials
+```
+
+`K_rfid` se almacena localmente en:
+
+```text
+local/keys/k_rfid
+```
+
+y debe mantenerse fuera de Git.
+
+Un usuario puede tener una o más credenciales RFID activas.
+
+## Runtime unificado
+
+Comando principal:
+
+```bash
+python raspberry/runtime_access.py \
   http://192.168.1.95/capture
 ```
 
-Lógica:
+Métodos disponibles:
 
 ```text
-capturar 3 frames válidos
+both
+face
+rfid
+```
+
+Ejemplos:
+
+```bash
+python raspberry/runtime_access.py \
+  http://192.168.1.95/capture \
+  --methods face
+```
+
+```bash
+python raspberry/runtime_access.py \
+  --methods rfid
+```
+
+El runtime ejecuta workers independientes para biometría y RFID y unifica ambos en una decisión común de acceso.
+
+Las fallas técnicas de cámara, visión, RFID o base de datos no deben convertirse automáticamente en rechazos de credenciales.
+
+## Regla de consenso biométrica
+
+Se capturan tres frames válidos:
+
+```text
+frame 1
+frame 2
+frame 3
 ↓
-si al menos 2 identifican al mismo usuario
+2 o más identifican al mismo usuario
 con score >= 0.45
 ↓
 USUARIO VÁLIDO
+```
 
-caso contrario
-↓
+Caso contrario:
+
+```text
 USUARIO NO AUTORIZADO
 ```
 
-## Validación en vivo
+## Control de puerta
 
-Prueba con `user_001`:
+Por seguridad, el modo por defecto es:
 
 ```text
-0.391301
-0.586555
-0.581802
-→ 2/3
-→ USUARIO VÁLIDO
-
-0.634341
-0.564879
-0.600887
-→ 3/3
-→ USUARIO VÁLIDO
-
-0.525558
-0.470321
-0.557747
-→ 3/3
-→ USUARIO VÁLIDO
-
-0.532937
-0.496281
-0.489149
-→ 3/3
-→ USUARIO VÁLIDO
+simulate
 ```
 
-Una persona no enrolada fue rechazada consistentemente.
+Una credencial válida genera la decisión y registra el evento, pero no energiza GPIO.
 
-Pendiente de validación presencial:
+El modo físico requiere configurar explícitamente:
+
+```bash
+python raspberry/runtime_access.py \
+  --methods rfid \
+  --door-mode gpio \
+  --relay-pin PIN_BCM_CONFIRMADO \
+  --relay-active high \
+  --door-open-seconds 3
+```
+
+No habilitar este modo hasta validar el módulo de relé, el GPIO BCM elegido y su polaridad.
+
+## Logs y auditoría
+
+Cada intento procesado por el runtime unificado puede registrarse en:
 
 ```text
+access_events
+```
+
+Incluye, entre otros:
+
+- timestamp;
+- método de autenticación;
+- usuario pseudonimizado;
+- autorizado / rechazado;
+- horario restringido;
+- motivos de alerta;
+- resultado de puerta.
+
+Consulta:
+
+```bash
+python admin/access_report.py --limit 50
+```
+
+Exportación CSV:
+
+```bash
+python admin/access_report.py \
+  --date 2026-10-01 \
+  --csv informe.csv
+```
+
+La detección avanzada de anomalías continúa siendo una etapa posterior.
+
+## Alertas por Telegram
+
+El runtime puede generar alertas por:
+
+- intento fuera de horario;
+- múltiples rechazos consecutivos.
+
+Horarios restringidos actuales:
+
+```text
+Lunes a viernes: 21:00 a 05:59
+Sábados y domingos: 17:00 a 08:59
+```
+
+Configuración local:
+
+```bash
+export TELEGRAM_BOT_TOKEN="token_del_bot"
+export TELEGRAM_CHAT_ID="id_del_chat"
+```
+
+Los secretos de Telegram no deben almacenarse en Git.
+
+Para eventos RFID, si corresponde una alerta, el runtime puede solicitar una captura adicional a la ESP32-CAM. Si la fotografía falla, la alerta de texto continúa.
+
+Telegram nunca decide la apertura de la puerta.
+
+## Backend REST para frontend
+
+El frontend no accede directamente a SQLite, GPIO, UID, claves ni embeddings.
+
+Instalación:
+
+```bash
+python -m pip install -r requirements-api.txt
+```
+
+Generar token:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Ejecutar:
+
+```bash
+export SECUREGATE_API_TOKEN="TOKEN_GENERADO"
+python raspberry/backend_api.py
+```
+
+Documentación OpenAPI:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Funciones disponibles:
+
+- estado general;
+- usuarios;
+- alta y activación/desactivación de usuarios;
+- consulta de credenciales disponibles por usuario;
+- revocación de RFID o biometría;
+- solicitud de enrolamiento RFID;
+- eventos de acceso;
+- resumen de eventos;
+- heartbeat del runtime.
+
+La interfaz web visual todavía no forma parte de esta versión.
+
+## Estado del runtime
+
+La tabla:
+
+```text
+runtime_status
+```
+
+permite al backend conocer:
+
+- si el runtime está ejecutándose;
+- métodos habilitados;
+- modo de puerta;
+- última actualización / heartbeat.
+
+## Seguridad
+
+### Pseudonimización
+
+Los usuarios operativos se representan como:
+
+```text
+user_001
 user_002
-user_003
-user_004
+...
 ```
 
-## Política de Git
+### Separación de claves
+
+```text
+K_bio  ≠  K_rfid
+```
+
+No se reutiliza la misma clave para biometría y RFID.
+
+### Política de Git
 
 No se versionan:
 
@@ -429,485 +501,109 @@ embeddings/
 secrets/
 config/local/
 esp32cam/include/network_secrets.hpp
+esp32cam/.pio/
 ```
 
-## Despliegue sobre Raspberry Pi 3
+### Mínima exposición de datos
 
-En Raspberry Pi 3:
+- fotografías de enrolamiento fuera de la Raspberry de operación;
+- embeddings cifrados en disco;
+- embeddings descifrados sólo temporalmente en RAM;
+- UID RFID no almacenado en claro;
+- claves fuera de SQLite y Git;
+- frontend sin acceso directo a secretos, UID o embeddings.
 
-```bash
-cd ~/secureGate
-git pull
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
+## ESP32-CAM
 
-Los modelos deben estar disponibles localmente:
+Firmware desarrollado con PlatformIO.
 
-```bash
-./scripts/download_models.sh
-```
-
-Transferencia manual desde notebook:
+IP reservada por DHCP:
 
 ```text
-data/db/securegate.db
-local/keys/k_bio
+192.168.1.95
 ```
 
-No se transfieren fotografías.
-
-Una vez preparado:
-
-```bash
-python raspberry/runtime_recognize_espcam.py \
-  http://192.168.1.95/capture
-```
-
-Ese comando inicia el prototipo funcional.
-
-
-
-## Flujo completo de incorporación y uso de un usuario biométrico
-
-### 1. Alta de un usuario
-
-El alta se realiza únicamente en el entorno ADMIN/notebook.
-
-Cada usuario se identifica de forma pseudonimizada:
+Endpoints:
 
 ```text
-user_001
-user_002
-user_003
-user_004
-...
-```
+/
+→ healthcheck
 
-Las fotografías se colocan en una carpeta local:
-
-```text
-data/enrollment/user_###/
-├── 01.jpg
-├── 02.jpg
-├── 03.jpg
-├── 04.jpg
-└── 05.jpg
-```
-
-Comando general:
-
-```bash
-python admin/enroll_user.py \
-  user_### \
-  data/enrollment/user_###
-```
-
-El script procesa todas las imágenes y agrega el nuevo usuario sin modificar los templates de usuarios ya existentes.
-
-### 2. Vectorización de la imagen
-
-Cada fotografía pasa por el mismo pipeline facial:
-
-```text
-imagen
-↓
-normalización de tamaño
-↓
-lado mayor máximo = 800 px
-↓
-YuNet
-↓
-detección del rostro
-↓
-alineación
-↓
-SFace
-↓
-embedding facial
-```
-
-SFace genera un embedding de:
-
-```text
-128 componentes
-```
-
-Conceptualmente:
-
-```text
-[e1, e2, e3, ..., e128]
-```
-
-Cada componente es un valor real que representa características del rostro dentro del espacio de embeddings del modelo.
-
-No se almacena la fotografía como parte del runtime biométrico de la Raspberry.
-
-### 3. Cifrado del embedding
-
-El embedding se convierte a bytes y se cifra antes de almacenarse:
-
-```text
-embedding 128D
-↓
-serialización float32
-↓
-AES-256-GCM
-↓
-ciphertext
-↓
-SQLite
-```
-
-La clave utilizada es:
-
-```text
-K_bio
-```
-
-`K_bio`:
-
-- es única y global para la base biométrica de esta instancia;
-- tiene 256 bits;
-- no es una clave por usuario;
-- no identifica personas;
-- permanece fuera de SQLite;
-- permanece fuera de Git.
-
-Cada template utiliza un nonce GCM único.
-
-SQLite almacena el ciphertext y la metadata necesaria, nunca el embedding en claro.
-
-### 4. Qué ocurre cuando se reconoce una persona
-
-La ESP-CAM no realiza reconocimiento.
-
-Su función es únicamente:
-
-```text
-ESP-CAM
-↓
-captura JPEG
-↓
 /capture
+→ JPEG
 ```
 
-El runtime solicita frames a la ESP-CAM de forma continua.
-
-Para cada frame válido:
+Resolución validada:
 
 ```text
-frame
-↓
-YuNet
-↓
-alineación
-↓
-SFace
-↓
-embedding_query de 128 componentes
+640x480
 ```
 
-El nuevo `embedding_query` no se guarda en SQLite.
+Actualmente `/capture` usa HTTP dentro de la LAN. HTTPS/TLS queda como hardening posterior.
 
-### 5. Descifrado de templates durante el matching
-
-Al iniciar el runtime se cargan los templates biométricos activos desde SQLite.
-
-Para cada template:
+## Red de prueba
 
 ```text
-SQLite
-↓
-ciphertext + nonce
-↓
-AES-256-GCM con K_bio
-↓
-embedding enrolado
-↓
-RAM
+Red LAN:       192.168.1.0/24
+Gateway/AP:    192.168.1.1
+Raspberry Pi:  192.168.1.40
+ESP32-CAM:     192.168.1.95
 ```
 
-El embedding se descifra temporalmente en memoria RAM para poder compararlo con el `embedding_query`.
+Las IP de Raspberry Pi y ESP32-CAM se mantienen mediante reservas DHCP.
 
-El proceso de matching utiliza similitud coseno:
+La autenticación local puede continuar dentro de la LAN sin Internet. La salida a Internet se utiliza para servicios externos como Telegram.
 
-```text
-embedding_query
-vs.
-embedding enrolado
-↓
-score
-```
-
-El runtime evalúa todos los templates activos y selecciona la mejor coincidencia.
-
-Los embeddings descifrados no se vuelven a escribir en claro en disco.
-
-### 6. Decisión biométrica
-
-El threshold del prototipo es:
-
-```text
-0.45
-```
-
-Para reducir falsos rechazos por una captura desfavorable, el runtime utiliza una regla temporal:
-
-```text
-3 frames válidos
-↓
-si al menos 2 de 3
-identifican al mismo usuario
-con score >= 0.45
-↓
-USUARIO VÁLIDO
-```
-
-En caso contrario:
-
-```text
-USUARIO NO AUTORIZADO
-```
-
-### 7. Loop de reconocimiento
-
-El runtime permanece ejecutándose continuamente hasta que el operador lo detiene con `Ctrl+C`.
-
-Conceptualmente:
-
-```text
-while True:
-    pedir frame a ESP-CAM
-
-    si no hay rostro:
-        continuar
-
-    generar embedding_query
-
-    comparar contra templates activos
-
-    acumular resultados de 3 frames
-
-    aplicar regla 2-de-3
-
-    imprimir resultado
-
-    continuar esperando
-```
-
-No es necesario reiniciar ni liberar la ESP-CAM después de cada usuario.
-
-La cámara permanece activa y disponible para la siguiente captura.
-
-### 8. Flujo resumido completo
-
-```text
-ENROLAMIENTO OFFLINE
-
-fotos user_###
-↓
-YuNet
-↓
-SFace
-↓
-5 embeddings × 128D
-↓
-AES-256-GCM con K_bio
-↓
-securegate.db
-
-
-RECONOCIMIENTO EN VIVO
-
-ESP-CAM
-↓
-JPEG
-↓
-YuNet
-↓
-SFace
-↓
-embedding_query 128D
-↓
-descifrado temporal de templates con K_bio
-↓
-matching 1:N
-↓
-3 frames
-↓
-regla 2-de-3
-↓
-USUARIO VÁLIDO / NO AUTORIZADO
-```
-
-## Comandos de utilidad
-
-### Enrolar un usuario nuevo
-
-Las fotografías se preparan únicamente en el entorno ADMIN/notebook.
-
-Convención:
-
-```text
-user_001
-user_002
-user_003
-user_004
-user_005
-...
-```
-
-Para agregar un nuevo usuario, crear su carpeta local con al menos 5 fotografías:
-
-```text
-data/enrollment/user_###/
-├── 01.jpg
-├── 02.jpg
-├── 03.jpg
-├── 04.jpg
-└── 05.jpg
-```
-
-Comando general:
-
-```bash
-cd ~/secureGate
-
-python admin/enroll_user.py \
-  user_### \
-  data/enrollment/user_###
-```
-
-Ejemplo para `user_005`:
-
-```bash
-python admin/enroll_user.py \
-  user_005 \
-  data/enrollment/user_005
-```
-
-El enrolamiento es incremental: agregar `user_004` no modifica los templates existentes de `user_001`, `user_002` o `user_003`.
-
-Verificación de templates activos:
-
-```bash
-sqlite3 data/db/securegate.db \
-'SELECT u.external_id, COUNT(t.template_id) AS templates
- FROM users u
- LEFT JOIN biometric_templates t
-   ON t.user_id = u.user_id
-  AND t.active = 1
- GROUP BY u.user_id
- ORDER BY u.external_id;'
-```
-
-### Analizar thresholds biométricos
-
-```bash
-python raspberry/analyze_thresholds.py \
-  data/enrollment
-```
-
-### Validar una imagen local contra la base
-
-```bash
-python raspberry/runtime_recognize_image.py \
-  /ruta/a/imagen.jpg
-```
-
-### Ejecutar secureGate con ESP-CAM
-
-En notebook o Raspberry Pi:
+## Inicialización de una instalación
 
 ```bash
 cd ~/secureGate
 source .venv/bin/activate
 
-python raspberry/runtime_recognize_espcam.py \
-  http://192.168.1.95/capture
-```
+python -m pip install -r requirements.txt \
+  -r requirements-rfid.txt \
+  -r requirements-api.txt
 
-El proceso queda activo hasta `Ctrl+C`.
-
-### Archivos que deben transferirse manualmente a Raspberry Pi
-
-Después de enrolar o modificar usuarios en la notebook, la base biométrica actualizada debe copiarse manualmente:
-
-```text
-data/db/securegate.db
-```
-
-También debe existir en la Raspberry la misma clave:
-
-```text
-local/keys/k_bio
-```
-
-`K_bio` se copia manualmente una vez por instalación, o nuevamente sólo si se reemplaza/rota de forma deliberada.
-
-Ejemplo desde notebook:
-
-```bash
-scp data/db/securegate.db \
-  usuario@raspberrypi:~/secureGate/data/db/
-
-scp local/keys/k_bio \
-  usuario@raspberrypi:~/secureGate/local/keys/
-```
-
-Las fotografías de enrolamiento NO se transfieren a Raspberry Pi.
-
-El código se actualiza mediante Git:
-
-```bash
-git pull
-```
-
-Los modelos YuNet/SFace tampoco se transfieren necesariamente a mano; pueden descargarse localmente en Raspberry mediante:
-
-```bash
+python raspberry/init_db.py
 ./scripts/download_models.sh
 ```
 
-Por lo tanto, para actualizar usuarios normalmente basta con transferir:
+Para desarrollo/tests:
 
-```text
-securegate.db
+```bash
+python -m pip install -r requirements-test.txt
+python -m pytest -q
 ```
 
-Si la Raspberry ya posee la misma `K_bio`, no es necesario volver a copiar la clave.
+## Transferencia de datos biométricos
 
-## Organización por grupos
+El enrolamiento facial se realiza en el equipo administrativo.
 
-### GRUPO 1 — Prototipo v1: biometría y ciberseguridad
+A la Raspberry se transfiere:
 
-Desarrollo del prototipo sobre Raspberry Pi 3. Reconocimiento facial con YuNet + SFace, embeddings, enrolamiento offline, AES-256-GCM, SQLite, `K_bio`, firmware ESP-CAM y ciberseguridad del prototipo.
+```text
+data/db/securegate.db
+local/keys/k_bio
+```
 
-### GRUPO 2 — Sensores y actuadores
+Si `K_bio` ya existe y no fue rotada, sólo debe actualizarse la DB.
 
-GPIO, relé, cerradura electromagnética, LED, buzzer y Reed switch. Lógica física de apertura, cierre, señalización y monitoreo.
+Una vez que se comienzan a enrolar tarjetas RFID en la Raspberry, esa copia de `securegate.db` contiene también las credenciales RFID. Evitar sobrescribirla con una copia antigua del equipo administrativo.
 
-### GRUPO 3 — Detección de anomalías, alertas, logs e investigación de IA local
+## Documentación
 
-Definición de eventos y comportamientos normales, sospechosos y críticos; generación de alertas; implementación y análisis de logs de accesos y eventos; reglas determinísticas; evaluación de Isolation Forest e investigación sobre necesidad y factibilidad de un LLM local en Raspberry Pi 4. La IA local es opcional y nunca decide apertura.
+- [Prototipo V1 biométrico — registro histórico](docs/PROTOTIPO_V1.md)
+- [Instalación RFID](docs/INSTALACION_RFID.md)
+- [Guía rápida RFID](docs/RFID_GUIA_RAPIDA.md)
+- [API para frontend](docs/API_FRONTEND.md)
+- [Despliegue Raspberry Pi 4](docs/DESPLIEGUE_RPI4.md)
 
-### GRUPO 4 — Frontend
+## Pendientes
 
-Desarrollo de la interfaz de usuario de la solución final.
-
-### GRUPO 5 — Integración final sobre Raspberry Pi 4 y RFID legacy
-
-Porteo del prototipo a Raspberry Pi 4, integración RFID legacy preservando tarjetas y autorizaciones, e integración final de los subsistemas.
-
-## Fuera del alcance del Prototipo v1
-
-- GPIO.
-- Relé.
-- RFID legacy y autenticación criptográfica de tarjetas (RC522 por UID incluido).
-- Reed switch.
-- Detección de anomalías.
-- Isolation Forest.
-- IA local.
-- Frontend.
-- Integración final en Raspberry Pi 4.
+- validación física completa del RC522;
+- validación eléctrica y mecánica del relé/cerradura;
+- Reed switch para estado real de puerta en implementación final;
+- frontend visual;
+- evaluación de detección avanzada de anomalías;
+- evaluación de necesidad y factibilidad de IA local;
+- hardening adicional de red y TLS/HTTPS para despliegue final.

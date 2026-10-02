@@ -1,10 +1,16 @@
-# PROTOTIPO V1 — Biometría y ciberseguridad
+# PROTOTIPO V1 — Registro histórico de biometría y ciberseguridad
 
-## Objetivo
+## Estado del documento
 
-Validar un prototipo funcional de control de acceso biométrico con Raspberry Pi 3 y ESP-CAM.
+Este documento conserva la **línea base histórica del Prototipo V1**, correspondiente a la etapa en la que secureGate validó el acceso únicamente por biometría facial sobre Raspberry Pi 3 + ESP32-CAM.
 
-Salida:
+La versión actual del proyecto evolucionó posteriormente e incorpora RFID, Telegram, logs persistentes, API REST, heartbeat y control de puerta en modo simulado/GPIO. El estado general vigente se documenta en `README.md`.
+
+## Objetivo original
+
+Validar un prototipo funcional de control de acceso biométrico con Raspberry Pi 3 y ESP32-CAM.
+
+Salida original:
 
 ```text
 [ACCESO] USUARIO VÁLIDO: user_00#
@@ -16,9 +22,9 @@ o:
 [ACCESO] USUARIO NO AUTORIZADO
 ```
 
-GPIO, relé y cerradura quedan fuera del prototipo.
+En esta etapa V1 no se utilizaban RFID, relé ni cerradura.
 
-## Arquitectura
+## Arquitectura V1
 
 ```text
 ADMIN / NOTEBOOK
@@ -36,27 +42,42 @@ Raspberry Pi 3
 ├── securegate.db
 ├── K_bio
 ├── YuNet/SFace
-└── runtime continuo
+└── runtime biométrico
         │
         ▼
-ESP-CAM
+ESP32-CAM
 192.168.1.95
 /capture
 ```
 
-## Parámetros
+## Pipeline biométrico
+
+```text
+imagen
+↓
+normalización ≤ 800 px
+↓
+YuNet
+↓
+detección y alineación
+↓
+SFace
+↓
+embedding de 128 componentes
+```
+
+Parámetros validados:
 
 ```text
 OpenCV = 4.11.0
 YuNet threshold = 0.7
-Normalización máxima = 800 px
 SFace embedding = 128D
 Métrica = similitud coseno
 Threshold = 0.45
-Regla temporal = 2 de 3 frames
+Regla de consenso = 2 de 3 frames
 ```
 
-## Base biométrica
+## Base biométrica validada
 
 ```text
 user_001 → 5 templates
@@ -68,76 +89,185 @@ user_004 → 5 templates
 Total:
 
 ```text
-20 templates cifrados
+20 templates cifrados activos
 ```
 
-## K_bio
+## Enrolamiento biométrico
+
+El alta se realiza offline en notebook/equipo administrativo:
+
+```text
+data/enrollment/user_###/
+├── 01.jpg
+├── 02.jpg
+├── 03.jpg
+├── 04.jpg
+└── 05.jpg
+```
+
+Comando:
+
+```bash
+python admin/enroll_user.py \
+  user_### \
+  data/enrollment/user_###
+```
+
+El enrolamiento es incremental.
+
+## Protección de embeddings
+
+Cada imagen produce un embedding de 128 componentes:
+
+```text
+[e1, e2, ..., e128]
+```
+
+El embedding se serializa y cifra:
+
+```text
+embedding 128D
+↓
+float32 → bytes
+↓
+AES-256-GCM
+↓
+ciphertext
+↓
+SQLite
+```
+
+`K_bio`:
 
 ```text
 local/keys/k_bio
 ```
 
-- 256 bits.
-- Global para la base biométrica.
-- Fuera de SQLite.
-- Fuera de Git.
-- Transferencia manual a Raspberry Pi.
+Características:
 
-## ESP-CAM
+- 256 bits;
+- global para la base biométrica;
+- fuera de SQLite;
+- fuera de Git;
+- transferida manualmente a la Raspberry.
 
-IP:
+Cada template utiliza un nonce GCM único.
 
-```text
-192.168.1.95
-```
+Los embeddings cifrados se almacenan en disco. Los embeddings descifrados existen únicamente de forma temporal en RAM durante el matching.
 
-Endpoint:
+## Reconocimiento en vivo V1
+
+La ESP32-CAM entrega JPEG mediante:
 
 ```text
 http://192.168.1.95/capture
 ```
 
-Captura validada:
+Para cada frame:
 
 ```text
-JPEG 640x480
+JPEG
+↓
+YuNet
+↓
+alineación
+↓
+SFace
+↓
+embedding_query 128D
+↓
+comparación 1:N
+↓
+similitud coseno
 ```
 
-## Runtime
+El `embedding_query` no se almacena en SQLite.
 
-```bash
-python raspberry/runtime_recognize_espcam.py \
-  http://192.168.1.95/capture
-```
-
-El proceso permanece activo hasta `Ctrl+C`.
-
-## Regla 2-de-3
+## Regla de consenso 2-de-3
 
 ```text
-2 o más coincidencias
-del mismo usuario
+3 frames válidos
+↓
+2 o más identifican al mismo usuario
 con score >= 0.45
-→ USUARIO VÁLIDO
-
-caso contrario
-→ USUARIO NO AUTORIZADO
+↓
+USUARIO VÁLIDO
 ```
 
-## Validación
-
-Offline:
+Caso contrario:
 
 ```text
+USUARIO NO AUTORIZADO
+```
+
+## Loop de reconocimiento
+
+Conceptualmente:
+
+```text
+while True:
+    capturar frame
+    detectar rostro
+    generar embedding_query
+    comparar contra templates
+    acumular 3 resultados
+    aplicar consenso 2-de-3
+    imprimir decisión
+    continuar
+```
+
+La ESP32-CAM permanece activa; no se reinicia después de cada reconocimiento.
+
+## Validación criptográfica
+
+Round-trip:
+
+```text
+embedding
+→ cifrado
+→ SQLite
+→ lectura
+→ descifrado
+→ embedding recuperado
+```
+
+Resultado validado:
+
+```text
+Embedding: 128 dimensiones
+Ciphertext: 528 bytes
+Nonce: 12 bytes
+Igualdad de bytes: True
+Igualdad de arrays: True
+PASS
+```
+
+## Validación biométrica offline
+
+La calibración original del threshold se realizó con tres usuarios:
+
+```text
+3 usuarios
+5 imágenes por usuario
+15 muestras
 30 comparaciones genuinas
 75 impostoras
 105 totales
-
-genuino mínimo  = 0.540249
-impostor máximo = 0.329046
 ```
 
-Runtime en vivo con `user_001`:
+Resultados:
+
+```text
+genuino mínimo  = 0.540249
+impostor máximo = 0.329046
+margen          = 0.211203
+```
+
+No se observó solapamiento en ese conjunto experimental.
+
+## Validación en vivo documentada
+
+Ejemplos con `user_001`:
 
 ```text
 0.391301
@@ -165,291 +295,65 @@ Runtime en vivo con `user_001`:
 → USUARIO VÁLIDO
 ```
 
-Una persona no enrolada fue rechazada consistentemente.
+Una persona no enrolada fue rechazada consistentemente durante las pruebas documentadas de esta etapa.
 
-Pendiente para demostración:
-
-```text
-user_002
-user_003
-user_004
-```
-
-## Despliegue en Raspberry Pi 3
-
-Después de `git pull`, copiar manualmente:
-
-```text
-data/db/securegate.db
-local/keys/k_bio
-```
-
-No se necesitan fotografías.
-
-Luego:
-
-```bash
-cd ~/secureGate
-source .venv/bin/activate
-
-python raspberry/runtime_recognize_espcam.py \
-  http://192.168.1.95/capture
-```
-
-Ese comando inicia el prototipo funcional.
-
-
-
-## Flujo de alta y reconocimiento
-
-### Alta de un usuario
-
-El alta se realiza fuera de la Raspberry, en notebook:
-
-```text
-data/enrollment/user_###/
-├── 01.jpg
-├── 02.jpg
-├── 03.jpg
-├── 04.jpg
-└── 05.jpg
-```
-
-Comando:
-
-```bash
-python admin/enroll_user.py \
-  user_### \
-  data/enrollment/user_###
-```
-
-Cada imagen se procesa así:
-
-```text
-imagen
-↓
-normalización ≤ 800 px
-↓
-YuNet
-↓
-alineación
-↓
-SFace
-↓
-embedding de 128 componentes
-```
-
-SFace no se entrena durante el enrolamiento. Se utiliza el modelo ya entrenado para extraer el vector biométrico.
-
-### Cifrado y almacenamiento
-
-Cada embedding se serializa y se cifra:
-
-```text
-embedding 128D
-↓
-float32 → bytes
-↓
-AES-256-GCM con K_bio
-↓
-ciphertext
-↓
-SQLite
-```
-
-`K_bio` es una única clave global de 256 bits para la base biométrica.
-
-Cada template utiliza un nonce GCM único.
-
-Los embeddings no se almacenan en claro.
-
-### Reconocimiento en vivo
-
-La ESP-CAM sólo entrega imágenes:
-
-```text
-ESP-CAM
-↓
-/capture
-↓
-JPEG
-```
-
-El runtime de Raspberry solicita frames continuamente.
-
-Cada frame válido genera:
-
-```text
-frame
-↓
-YuNet
-↓
-SFace
-↓
-embedding_query de 128 componentes
-```
-
-El runtime carga los templates cifrados de SQLite y los descifra temporalmente en RAM:
-
-```text
-ciphertext
-↓
-AES-256-GCM + K_bio
-↓
-embedding enrolado
-↓
-RAM
-```
-
-Luego compara:
-
-```text
-embedding_query
-vs.
-todos los embeddings enrolados
-↓
-similitud coseno
-↓
-mejor coincidencia
-```
-
-### Regla temporal
-
-Threshold:
-
-```text
-0.45
-```
-
-Decisión:
-
-```text
-3 frames válidos
-↓
-2 o más identifican al mismo usuario
-con score >= 0.45
-↓
-USUARIO VÁLIDO
-```
-
-Caso contrario:
-
-```text
-USUARIO NO AUTORIZADO
-```
-
-### Loop
-
-El programa se mantiene activo:
-
-```text
-while True:
-    capturar frame
-    detectar rostro
-    generar embedding_query
-    comparar
-    acumular 3 resultados
-    decidir 2-de-3
-    imprimir
-    continuar
-```
-
-La ESP-CAM no se reinicia ni se libera después de cada reconocimiento.
-
-## Comandos de operación y mantenimiento
-
-### Enrolar un nuevo usuario — sólo en notebook
-
-Crear la carpeta local:
-
-```text
-data/enrollment/user_###/
-```
-
-con al menos 5 fotografías y ejecutar:
-
-```bash
-cd ~/secureGate
-
-python admin/enroll_user.py \
-  user_### \
-  data/enrollment/user_###
-```
-
-Ejemplo:
-
-```bash
-python admin/enroll_user.py \
-  user_005 \
-  data/enrollment/user_005
-```
-
-Verificar:
-
-```bash
-sqlite3 data/db/securegate.db \
-'SELECT u.external_id, COUNT(t.template_id) AS templates
- FROM users u
- LEFT JOIN biometric_templates t
-   ON t.user_id = u.user_id
-  AND t.active = 1
- GROUP BY u.user_id
- ORDER BY u.external_id;'
-```
-
-### Transferir la base actualizada a Raspberry Pi
-
-Después de enrolar usuarios, copiar manualmente:
-
-```text
-data/db/securegate.db
-```
-
-Ejemplo:
-
-```bash
-scp data/db/securegate.db \
-  usuario@raspberrypi:~/secureGate/data/db/
-```
-
-`K_bio` debe existir también en:
-
-```text
-local/keys/k_bio
-```
-
-y debe ser exactamente la misma clave con la que se cifró la base.
-
-Si la Raspberry ya posee la `K_bio` correcta, no hace falta copiarla otra vez.
-
-Las fotografías de enrolamiento no se transfieren.
-
-### Preparar Raspberry Pi
-
-```bash
-cd ~/secureGate
-git pull
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-./scripts/download_models.sh
-```
-
-### Ejecutar Prototipo v1
+## Ejecución histórica del V1
 
 ```bash
 python raspberry/runtime_recognize_espcam.py \
   http://192.168.1.95/capture
 ```
 
-El runtime queda activo continuamente hasta `Ctrl+C`.
+Este runtime biométrico continúa disponible por compatibilidad y para pruebas aisladas.
 
-## Fuera del alcance
+La operación integrada actual utiliza:
 
-- RFID.
-- GPIO.
-- Relé.
-- Reed switch.
-- Detección de anomalías.
-- IA local.
-- Frontend.
-- Integración final Raspberry Pi 4.
+```bash
+python raspberry/runtime_access.py \
+  http://192.168.1.95/capture
+```
+
+## Transferencia biométrica
+
+Desde el equipo administrativo se transfieren:
+
+```text
+data/db/securegate.db
+local/keys/k_bio
+```
+
+No se necesitan fotografías de enrolamiento en la Raspberry.
+
+## Evolución posterior al V1
+
+Después de validar este prototipo se incorporaron, sin reemplazar el núcleo biométrico:
+
+- RFID RC522 por SPI;
+- protección de UID mediante HMAC-SHA-256;
+- `K_rfid` separada de `K_bio`;
+- runtime unificado facial OR RFID;
+- alertas Telegram;
+- registro persistente `access_events`;
+- API REST para frontend;
+- solicitudes de enrolamiento RFID desde backend;
+- heartbeat del runtime;
+- control de puerta en modo simulado y driver GPIO configurable;
+- tests automatizados.
+
+Estas funcionalidades corresponden a la versión integrada actual y se documentan en `README.md`.
+
+## Alcance que quedó fuera de la etapa V1
+
+En la etapa V1 todavía no se habían implementado:
+
+- RFID;
+- control GPIO/relé;
+- logs persistentes;
+- API REST;
+- frontend;
+- Reed switch;
+- detección avanzada de anomalías;
+- IA local;
+- integración final sobre Raspberry Pi 4.
+
+Algunas de estas funciones ya están implementadas actualmente; por eso esta sección describe únicamente el alcance histórico del V1.
