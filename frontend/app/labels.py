@@ -201,3 +201,26 @@ def event_view(event, users, tz):
         "door_class": door_class,
         "alerts": event_alerts(event),
     }
+
+
+# --- Enrolamiento RFID ------------------------------------------------------
+
+def enrollment_view(enrollment, user_name, now=None):
+    status = enrollment.get("status")
+    view = {
+        "request_id": enrollment["request_id"],
+        "external_id": enrollment["external_id"],
+        "pending": status == ENROLLMENT_PENDING,
+        "completed": status == ENROLLMENT_COMPLETED,
+    }
+    if view["pending"]:
+        view["title"] = ENROLLMENT_WAITING
+        view["remaining"] = timefmt.seconds_until(enrollment.get("expires_at"), now)
+        return view
+    kind, message = ENROLLMENT_FINAL.get(status, ("error", f"Estado desconocido: {status}"))
+    error_code = enrollment.get("error_code")
+    if status == "failed" and error_code != "card_unavailable":
+        message = f"No se pudo asociar la tarjeta (código: {error_code or 'sin detalle'})."
+    view["kind"] = kind
+    view["message"] = message.format(name=user_name)
+    return view

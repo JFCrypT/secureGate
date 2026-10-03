@@ -239,4 +239,5 @@ async def verify_csrf(request: Request):
 
 
 def flash(request, text, kind="ok"):
-    request.session.setdefault("flash", []).append({"kind": kind, "text": text})
+    # Se reasigna la lista: mutarla en el lugar no marca la sesión como modificada.
+    request.session["flash"] = [*request.session.get("flash", []), {"kind": kind, "text": text}]

@@ -283,3 +283,12 @@ def test_ultimos_accesos_incompletos(admin, front, mock_state):
         text = admin.get("/dashboard/usuarios/user_006").text
     assert "Sin accesos en los eventos recientes." in text
     assert "puede haber otros más antiguos" in text
+
+
+def test_dos_avisos_seguidos_no_se_pierden(admin):
+    post(admin, "/dashboard/usuarios/user_001/estado", activo="no")
+    token = TOKENS[id(admin)]
+    admin.post("/dashboard/usuarios/user_001/tarjeta/revocar", headers={"X-CSRF-Token": token})
+    page = admin.get("/dashboard/usuarios/user_001").text
+    assert "Usuario desactivado" in page and "Tarjeta revocada." in page
+    assert "Tarjeta revocada." not in admin.get("/dashboard/usuarios/user_001").text

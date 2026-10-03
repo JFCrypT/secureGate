@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Asociar tarjeta{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ base }}/usuarios/{{ usuario.external_id }}">← {{ usuario.label }}</a></p>
+<h1>Asociar tarjeta</h1>
+<section class="card">
+  <p>Usuario: <strong>{{ usuario.label }}</strong></p>
+  {% if conflict %}<p class="banner banner-error" role="alert">{{ conflict }}</p>{% endif %}
+  {% if blocked %}
+  <p class="banner banner-error" role="alert">{{ blocked }}.</p>
+  <a class="btn" href="{{ base }}/usuarios/{{ usuario.external_id }}">Volver al usuario</a>
+  {% else %}
+  {% if reader_warning %}<p class="banner banner-warn">{{ reader_warning }}.</p>{% endif %}
+  <p>Al iniciar, el lector espera una tarjeta durante {{ timeout }} segundos. Tené la tarjeta a mano.</p>
+  <form method="post" action="{{ base }}/usuarios/{{ usuario.external_id }}/rfid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">{% if conflict %}Reintentar{% else %}Iniciar{% endif %}</button>
+      <a class="btn" href="{{ base }}/usuarios/{{ usuario.external_id }}">Cancelar</a>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}
