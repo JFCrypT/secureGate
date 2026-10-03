@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Nuevo usuario{% endblock %}
+{% block content %}
+<h1>Nuevo usuario</h1>
+<section class="card">
+  {% for message in general | default([]) %}
+  <p class="banner banner-error" role="alert">{{ message }}</p>
+  {% endfor %}
+  <form method="post" action="{{ base }}/usuarios/nuevo">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% include "_usuario_campos.html" %}
+    <p class="muted small">El identificador (user_NNN) se asigna automáticamente. La tarjeta se asocia después del alta.</p>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Crear usuario</button>
+      <a class="btn" href="{{ base }}/usuarios">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

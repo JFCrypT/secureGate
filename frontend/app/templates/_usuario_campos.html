@@ -1,0 +1,8 @@
+{# Campos de nombre, apellido y rol; mismos límites que la API. #}
+{% for name, label, limit in (("nombre", "Nombre", 100), ("apellido", "Apellido", 100), ("rol", "Rol", 50)) %}
+<div class="field">
+  <label for="c-{{ name }}">{{ label }}</label>
+  <input type="text" id="c-{{ name }}" name="{{ name }}" value="{{ form[name] | default('') }}" maxlength="{{ limit }}">
+  {% if errors[name] %}<p class="field-error">{{ errors[name] }}</p>{% endif %}
+</div>
+{% endfor %}
