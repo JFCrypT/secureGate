@@ -21,7 +21,7 @@ from app.api_client import (
     SecureGateClient,
 )
 from app.config import ConfigError, load_env_file, load_settings
-from app.routes import alertas, dashboard, enrolamiento, historial, partials, sesion, usuarios
+from app.routes import alertas, dashboard, enrolamiento, historial, partials, reportes, sesion, usuarios
 from app.templating import APP_DIR, render
 
 
@@ -97,7 +97,7 @@ def create_app(settings=None, api_transport=None):
             return await not_authenticated(request, exc)
         titles = {403: "Acceso denegado", 404: "No encontrado"}
         messages = {404: "La página no existe.", 405: "Método no permitido."}
-        detail = exc.detail if exc.status_code == 403 else None
+        detail = exc.detail if exc.status_code in (403, 422) else None
         return error_page(
             request, exc.status_code,
             titles.get(exc.status_code, "Error"),
@@ -121,7 +121,7 @@ def create_app(settings=None, api_transport=None):
 
     app.include_router(sesion.router, prefix=base)
     private = [Depends(auth.require_login)]
-    for module in (dashboard, partials, usuarios, enrolamiento, historial, alertas):
+    for module in (dashboard, partials, usuarios, enrolamiento, historial, alertas, reportes):
         app.include_router(module.router, prefix=base, dependencies=private)
     return app
 
