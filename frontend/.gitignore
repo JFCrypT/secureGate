@@ -1,0 +1,8 @@
+# El .gitignore raíz ignora ".env.*"; el ejemplo sí se versiona.
+!.env.example
+.env
+.venv/
+.pytest_cache/
+__pycache__/
+operators.json
+*.operators.json

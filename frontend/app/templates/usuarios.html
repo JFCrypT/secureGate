@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Usuarios{% endblock %}
+{% macro tri(name, label, value) %}
+<div>
+  <label for="f-{{ name }}">{{ label }}</label>
+  <select id="f-{{ name }}" name="{{ name }}">
+    <option value="">Todos</option>
+    <option value="si" {% if value == "si" %}selected{% endif %}>Sí</option>
+    <option value="no" {% if value == "no" %}selected{% endif %}>No</option>
+  </select>
+</div>
+{% endmacro %}
+{% block content %}
+<h1>Usuarios</h1>
+<section class="card">
+  <form method="get" action="{{ base }}/usuarios" class="filters">
+    <div class="wide">
+      <label for="f-q">Buscar por nombre o ID</label>
+      <input type="search" id="f-q" name="q" value="{{ filtros.q }}">
+    </div>
+    {{ tri("activo", "Activo", filtros.activo) }}
+    {{ tri("rostro", "Con rostro", filtros.rostro) }}
+    {{ tri("tarjeta", "Con tarjeta", filtros.tarjeta) }}
+    <div><button type="submit" class="btn">Filtrar</button></div>
+  </form>
+  {% if operator.is_admin %}
+  <div class="actions"><a class="btn btn-primary" href="{{ base }}/usuarios/nuevo">Nuevo usuario</a></div>
+  {% endif %}
+</section>
+<section class="card">
+  <p class="muted small">Mostrando {{ usuarios | length }} de {{ total }} usuarios.</p>
+  {% if usuarios %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Nombre</th><th>Apellido</th><th>Rol</th><th>ID</th><th>Estado</th><th>Rostro</th><th>Tarjeta</th></tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr>
+          <td>{{ u.first_name }}</td>
+          <td>{{ u.last_name }}</td>
+          <td>{{ u.role }}</td>
+          <td class="nowrap"><a href="{{ base }}/usuarios/{{ u.external_id }}">{{ u.external_id }}</a></td>
+          <td><span class="badge badge-{{ u.active_class }}">{{ u.active_label }}</span></td>
+          <td class="nowrap">{{ u.face_label }}</td>
+          <td>{{ u.rfid_label }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No hay usuarios que coincidan con el filtro.</p>
+  {% endif %}
+</section>
+{% endblock %}

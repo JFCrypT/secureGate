@@ -1,0 +1,27 @@
+# EJEMPLO. El front no instala esto solo: quien integra decide si lo usa.
+# Copiar a /etc/systemd/system/securegate-frontend.service y reemplazar USUARIO_RPI.
+# No modifica ni reemplaza ningún servicio existente de secureGate.
+
+[Unit]
+Description=secureGate dashboard web (front)
+After=network-online.target securegate-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=USUARIO_RPI
+Group=USUARIO_RPI
+WorkingDirectory=/home/USUARIO_RPI/secureGate/frontend
+EnvironmentFile=/etc/securegate/frontend.env
+# Un solo proceso: NO agregar --workers. El rate limit de login y las cachés
+# viven en memoria; con más de un worker dejarían de ser confiables.
+# Sin --proxy-headers: no hay proxy delante, la IP del cliente es la del socket.
+ExecStart=/home/USUARIO_RPI/secureGate/frontend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

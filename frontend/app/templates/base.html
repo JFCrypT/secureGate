@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}secureGate{% endblock %} · secureGate</title>
+  <link rel="stylesheet" href="{{ base }}/static/app.css">
+  <script src="{{ base }}/static/htmx.min.js" defer></script>
+  <script src="{{ base }}/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ base }}/">secureGate</a>
+    {% if operator %}
+    <nav class="nav" aria-label="Secciones">
+      {% set here = section | default("") %}
+      <a href="{{ base }}/" {% if here == "dashboard" %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="{{ base }}/usuarios" {% if here == "usuarios" %}aria-current="page"{% endif %}>Usuarios</a>
+      <a href="{{ base }}/historial" {% if here == "historial" %}aria-current="page"{% endif %}>Historial</a>
+      <a href="{{ base }}/alertas" {% if here == "alertas" %}aria-current="page"{% endif %}>Alertas</a>
+      <a href="{{ base }}/reportes" {% if here == "reportes" %}aria-current="page"{% endif %}>Reportes</a>
+    </nav>
+    <form class="session" method="post" action="{{ base }}/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <span class="who">{{ operator.usuario }} · {{ operator.rol_label }}</span>
+      <button type="submit" class="btn btn-small">Salir</button>
+    </form>
+    {% endif %}
+  </header>
+  <main class="page">
+    <p id="sin-conexion" class="banner banner-error" role="alert" hidden>Sin conexión con el servidor del dashboard. Los datos en pantalla pueden estar desactualizados.</p>
+    {% for flash in flashes %}
+    <p class="banner banner-{{ flash.kind }}" role="status">{{ flash.text }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{% set e = enrolamiento %}
+{% if e.pending %}
+<section class="card" id="enrolamiento" hx-get="{{ base }}/partials/enrolamiento/{{ e.request_id }}"
+         hx-trigger="every 1s" hx-swap="outerHTML">
+  <h2>{{ e.title }}</h2>
+  {% if poll_error %}
+  <p class="banner banner-error" role="alert">{{ poll_error }}. Reintentando…</p>
+  {% else %}
+  <p class="countdown" aria-live="off">{{ e.remaining }} s</p>
+  <p class="muted">La solicitud vence sola cuando el contador llega a cero.</p>
+  <form method="post" action="{{ base }}/usuarios/{{ e.external_id }}/rfid/{{ e.request_id }}/cancelar">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn btn-danger">Cancelar</button>
+  </form>
+  {% endif %}
+</section>
+{% else %}
+<section class="card" id="enrolamiento">
+  <p class="banner banner-{{ e.kind }}" role="status">{{ e.message }}</p>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ base }}/usuarios/{{ e.external_id }}">Volver al usuario</a>
+    {% if not e.completed %}
+    <a class="btn" href="{{ base }}/usuarios/{{ e.external_id }}/rfid">Intentar de nuevo</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}

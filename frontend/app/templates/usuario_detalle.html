@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ usuario.name }}{% endblock %}
+{% block content %}
+<p class="small"><a href="{{ base }}/usuarios">← Usuarios</a></p>
+<h1>{{ usuario.label }} <span class="badge badge-{{ usuario.active_class }}">{{ usuario.active_label }}</span></h1>
+
+{% if recien_creado and operator.is_admin and not usuario.has_rfid %}
+<p class="banner banner-ok">
+  ¿Querés asociarle una tarjeta?
+  <a class="btn btn-small btn-primary" href="{{ base }}/usuarios/{{ usuario.external_id }}/rfid">Asociar tarjeta ahora</a>
+</p>
+{% endif %}
+{% for message in general %}
+<p class="banner banner-error" role="alert">{{ message }}</p>
+{% endfor %}
+
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Datos</h2>
+    {% if operator.is_admin %}
+    <form method="post" action="{{ base }}/usuarios/{{ usuario.external_id }}/editar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% include "_usuario_campos.html" %}
+      <button type="submit" class="btn btn-primary">Guardar cambios</button>
+    </form>
+    {% else %}
+    <dl class="facts">
+      <dt>Nombre</dt><dd>{{ usuario.first_name }}</dd>
+      <dt>Apellido</dt><dd>{{ usuario.last_name }}</dd>
+      <dt>Rol</dt><dd>{{ usuario.role }}</dd>
+    </dl>
+    {% endif %}
+    <dl class="facts small">
+      <dt>ID</dt><dd>{{ usuario.external_id }}</dd>
+      <dt>Alta</dt><dd>{{ usuario.created_at }}</dd>
+    </dl>
+    {% if operator.is_admin %}
+    <div class="actions">
+      {% if usuario.active %}
+      <form method="post" action="{{ base }}/usuarios/{{ usuario.external_id }}/estado"
+            data-confirm="Se conservan la tarjeta y el registro facial, pero el usuario deja de autorizar ingresos. ¿Desactivar?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="activo" value="no">
+        <button type="submit" class="btn btn-danger">Desactivar usuario</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ base }}/usuarios/{{ usuario.external_id }}/estado"
+            data-confirm="El usuario vuelve a autorizar ingresos con sus credenciales actuales. ¿Activar?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="activo" value="si">
+        <button type="submit" class="btn">Activar usuario</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Credenciales asociadas</h2>
+    <dl class="facts">
+      <dt>Tarjeta RFID</dt><dd>{{ usuario.rfid_label }}</dd>
+      <dt>Rostro</dt><dd>{{ usuario.face_label }}{% if usuario.has_face %} <span class="muted small">(templates)</span>{% endif %}</dd>
+    </dl>
+    <p class="muted small">{{ face_info }}.</p>
+    {% if operator.is_admin %}
+    <div class="actions">
+      {% if usuario.has_rfid %}
+      <form method="post" action="{{ base }}/usuarios/{{ usuario.external_id }}/tarjeta/revocar"
+            data-confirm="La tarjeta deja de abrir. ¿Revocar la tarjeta de {{ usuario.name }}?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-danger">Revocar tarjeta</button>
+      </form>
+      {% else %}
+      <a class="btn btn-primary" href="{{ base }}/usuarios/{{ usuario.external_id }}/rfid">Asociar tarjeta</a>
+      {% endif %}
+      {% if usuario.has_face %}
+      <form method="post" action="{{ base }}/usuarios/{{ usuario.external_id }}/rostro/revocar"
+            data-confirm="El rostro deja de autorizar y hay que volver a registrarlo en el puesto local. ¿Revocar el rostro de {{ usuario.name }}?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-danger">Revocar rostro</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Últimos accesos</h2>
+  {% if accesos %}
+  {{ m.events_table(accesos, show_user=false) }}
+  {% else %}
+  <p class="muted">Sin accesos en los eventos recientes.</p>
+  {% endif %}
+  {% if not accesos_completos %}
+  <p class="muted small">Se revisaron sólo los eventos más recientes y no se llegó a {{ accesos_buscados }} accesos: puede haber otros más antiguos en el historial.</p>
+  {% endif %}
+</section>
+{% endblock %}

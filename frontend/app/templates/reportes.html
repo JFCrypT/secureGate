@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Reportes{% endblock %}
+{% macro breakdown(title, first_column, rows) %}
+<section class="card">
+  <h2>{{ title }}</h2>
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ first_column }}</th><th>Autorizados</th><th>Rechazados</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr><td>{{ row.label }}</td><td>{{ row.granted }}</td><td>{{ row.denied }}</td><td>{{ row.total }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Sin registros en el rango.</p>
+  {% endif %}
+</section>
+{% endmacro %}
+{% block content %}
+<h1>Reportes</h1>
+<section class="card">
+  {% if error %}<p class="banner banner-error" role="alert">{{ error }}</p>{% endif %}
+  <form method="get" action="{{ base }}/reportes" class="filters">
+    <div>
+      <label for="f-desde">Desde</label>
+      <input type="date" id="f-desde" name="desde" value="{{ filtros.desde }}">
+    </div>
+    <div>
+      <label for="f-hasta">Hasta</label>
+      <input type="date" id="f-hasta" name="hasta" value="{{ filtros.hasta }}">
+    </div>
+    <div>
+      <label for="f-metodo">Método</label>
+      <select id="f-metodo" name="metodo">
+        <option value="">Todos</option>
+        {% for value, label in metodos.items() %}
+        <option value="{{ value }}" {% if filtros.metodo == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="f-resultado">Resultado</label>
+      <select id="f-resultado" name="resultado">
+        <option value="">Todos</option>
+        <option value="autorizado" {% if filtros.resultado == "autorizado" %}selected{% endif %}>Autorizado</option>
+        <option value="rechazado" {% if filtros.resultado == "rechazado" %}selected{% endif %}>No autorizado</option>
+      </select>
+    </div>
+    <div class="actions wide">
+      <button type="submit" class="btn btn-primary">Ver reporte</button>
+      {% if reporte %}<a class="btn" href="{{ csv_url }}">Exportar CSV</a>{% endif %}
+    </div>
+  </form>
+  <p class="muted small">Rango máximo: {{ max_dias }} días.</p>
+</section>
+
+{% if reporte %}
+{% if truncado %}
+<p class="banner banner-warn" role="alert">El rango supera los {{ tope }} eventos: el reporte y el CSV incluyen sólo los primeros {{ tope }}. Acotá las fechas.</p>
+{% endif %}
+<section class="card">
+  <h2>Autorizados y rechazados</h2>
+  <dl class="stats">
+    <div class="stat"><dt>Total</dt><dd>{{ reporte.totals.total }}</dd></div>
+    <div class="stat"><dt>Autorizados</dt><dd class="text-ok">{{ reporte.totals.granted }} <span class="small">({{ reporte.totals.granted_pct }} %)</span></dd></div>
+    <div class="stat"><dt>Rechazados</dt><dd class="text-bad">{{ reporte.totals.denied }} <span class="small">({{ reporte.totals.denied_pct }} %)</span></dd></div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Por fecha</h2>
+  {% if chart %}
+  <svg class="chart" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="Accesos por día: autorizados y rechazados">
+    {% for bar in chart.bars %}
+    <g>
+      <title>{{ bar.title }}</title>
+      <rect class="bar-ok" x="{{ bar.x }}" y="{{ bar.granted_y }}" width="{{ bar.width }}" height="{{ bar.granted_h }}"></rect>
+      <rect class="bar-bad" x="{{ bar.x }}" y="{{ bar.denied_y }}" width="{{ bar.width }}" height="{{ bar.denied_h }}"></rect>
+      {% if bar.label %}<text x="{{ bar.label_x }}" y="{{ chart.label_y }}" text-anchor="middle">{{ bar.label }}</text>{% endif %}
+    </g>
+    {% endfor %}
+  </svg>
+  <p class="legend"><span class="l-ok">Autorizados</span><span class="l-bad">Rechazados</span></p>
+  {% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Fecha</th><th>Autorizados</th><th>Rechazados</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for row in reporte.by_day %}
+        <tr><td>{{ row.label }}</td><td>{{ row.granted }}</td><td>{{ row.denied }}</td><td>{{ row.total }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="grid grid-2">
+  {{ breakdown("Por usuario", "Usuario", reporte.by_user) }}
+  {{ breakdown("Por método", "Método", reporte.by_method) }}
+</div>
+{% endif %}
+{% endblock %}

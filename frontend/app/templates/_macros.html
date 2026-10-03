@@ -1,0 +1,40 @@
+{# Piezas reutilizadas. Reciben vistas armadas en labels.py. #}
+
+{% macro alerts(event) %}
+  {%- for alert in event.alerts -%}
+    <span class="badge badge-warn">{{ alert.label }}</span>{{ " " }}
+  {%- else -%}
+    <span class="muted">—</span>
+  {%- endfor -%}
+{% endmacro %}
+
+{% macro events_table(events, show_user=true, show_restricted=false, highlight=none) %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha y hora</th>
+        {% if show_user %}<th>Usuario</th>{% endif %}
+        <th>Método</th>
+        <th>Resultado</th>
+        {% if show_restricted %}<th>Fuera de horario</th>{% endif %}
+        <th>Puerta</th>
+        <th>Alertas</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in events %}
+      <tr id="evento-{{ event.event_id }}" {% if highlight == event.event_id %}class="destacado"{% endif %}>
+        <td class="nowrap">{{ event.when }}</td>
+        {% if show_user %}<td>{{ event.user_label }}</td>{% endif %}
+        <td>{{ event.method_label }}</td>
+        <td><span class="badge badge-{{ event.result_class }}">{{ event.result_label }}</span></td>
+        {% if show_restricted %}<td>{{ event.restricted_label }}</td>{% endif %}
+        <td class="text-{{ event.door_class }}">{{ event.door_label }}</td>
+        <td>{{ alerts(event) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
