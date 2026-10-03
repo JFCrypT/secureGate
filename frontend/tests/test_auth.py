@@ -180,3 +180,18 @@ def test_cli_rechaza_duplicados_y_claves_cortas(tmp_path, monkeypatch):
         run_cli(monkeypatch, path, "add-user", "Nombre Inválido", "--role", "viewer", "--password-stdin")
     with pytest.raises(SystemExit):
         run_cli(monkeypatch, path, "disable-user", "nadie")
+
+
+def test_cli_con_archivo_vacio_en_directorio_sin_permiso(tmp_path, monkeypatch):
+    # Como en la Pi: /etc/securegate es de root y el archivo se creó vacío con 600.
+    folder = tmp_path / "etc"
+    folder.mkdir()
+    path = folder / "ops.json"
+    path.touch(mode=0o600)
+    folder.chmod(0o500)
+    try:
+        run_cli(monkeypatch, path, "add-user", "admin", "--role", "admin", "--password-stdin")
+        assert auth.OperatorStore(path).verify("admin", "una-clave-larga")
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
+    finally:
+        folder.chmod(0o700)

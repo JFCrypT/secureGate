@@ -19,8 +19,8 @@ CSV_ALERT_SEPARATOR = " | "
 FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 CHART_WIDTH = 640
-CHART_HEIGHT = 160
-CHART_LABELS = 20  # alto reservado para las fechas
+CHART_HEIGHT = 166
+CHART_LABELS = 26  # alto reservado para las fechas
 
 
 def parse_range(desde, hasta, today):
@@ -100,7 +100,7 @@ def chart(by_day):
             "label_x": round(x + width / 2, 1),
             "title": f"{bucket['label']}: {bucket['granted']} autorizados, {bucket['denied']} rechazados",
         })
-    return {"width": CHART_WIDTH, "height": CHART_HEIGHT, "label_y": CHART_HEIGHT - 5,
+    return {"width": CHART_WIDTH, "height": CHART_HEIGHT, "label_y": CHART_HEIGHT - 6,
             "peak": peak, "bars": bars}
 
 

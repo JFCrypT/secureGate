@@ -110,20 +110,29 @@ def read_operators_file(path):
     path = Path(path)
     if not path.exists():
         return {"usuarios": []}
-    data = json.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return {"usuarios": []}  # archivo recién creado con los permisos correctos
+    data = json.loads(text)
     if not isinstance(data, dict) or not isinstance(data.get("usuarios"), list):
         raise ValueError("El archivo de operadores no tiene el formato esperado.")
     return data
 
 
 def write_operators_file(path, data):
-    """Escritura atómica con permisos 600."""
+    """Escritura con permisos 600; atómica si el directorio lo permite."""
     path = Path(path)
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     temporary = path.with_name(path.name + ".tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    except PermissionError:
+        # Directorio de root (p. ej. /etc/securegate) con el archivo ya creado
+        # a nombre del usuario del servicio: se escribe en el lugar.
+        path.write_text(text, encoding="utf-8")
+        return
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
+        handle.write(text)
     os.chmod(temporary, 0o600)
     os.replace(temporary, path)
 
