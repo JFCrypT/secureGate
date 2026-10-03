@@ -146,6 +146,68 @@ class TelegramNotifier:
             "sendPhoto", body, f"multipart/form-data; boundary={boundary}"
         )
 
+    def send_document(self, content, filename, caption=""):
+        """Envía un archivo (usado para logs que exceden el límite de texto)."""
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        boundary = f"securegate-{token_hex(16)}"
+        parts = [
+            _multipart_field(
+                boundary,
+                "chat_id",
+                self.config.chat_id,
+            ),
+            _multipart_file(
+                boundary,
+                "document",
+                filename,
+                "text/plain; charset=utf-8",
+                content,
+            ),
+        ]
+        if caption:
+            parts.append(_multipart_field(boundary, "caption", caption[:1024]))
+        parts.append(f"--{boundary}--\r\n".encode("ascii"))
+        return self._send(
+            "sendDocument", b"".join(parts), f"multipart/form-data; boundary={boundary}"
+        )
+
+    def get_updates(self, offset=None, timeout=0):
+        """Polling para comandos (solo se usa para /logs)."""
+        params = {"timeout": int(timeout), "allowed_updates": '["message"]'}
+        if offset is not None:
+            params["offset"] = int(offset)
+        request = Request(
+            (
+                "https://api.telegram.org/bot"
+                f"{self.config.bot_token}/getUpdates?{urlencode(params)}"
+            ),
+            headers={"User-Agent": "secureGate/1.0"},
+            method="GET",
+        )
+        try:
+            with urlopen(
+                request,
+                timeout=self.config.timeout_seconds + int(timeout),
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            raise TelegramDeliveryError(
+                "Telegram rechazó la consulta " f"(HTTP {exc.code})."
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise TelegramDeliveryError(
+                "No se pudo conectar con Telegram."
+            ) from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise TelegramDeliveryError(
+                "Telegram devolvió una respuesta inválida."
+            ) from exc
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            raise TelegramDeliveryError("Telegram no confirmó la consulta.")
+        result = payload.get("result", [])
+        return result if isinstance(result, list) else []
+
     def _send(self, method, body, content_type):
         request = Request(
             (

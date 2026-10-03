@@ -17,8 +17,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from securegate.access import AccessController, AccessEvent, PresenceGate
 from securegate.access_log import AccessLogRepository
 from securegate.alerts import DEFAULT_TIMEZONE, TelegramNotifier, load_timezone
+from securegate.alerts.commands import (
+    build_logs_text,
+    extract_message,
+    is_authorized,
+    parse_command,
+    parse_limit,
+    should_send_as_document,
+)
 from securegate.alerts.schedule import is_restricted_time
 from securegate.alerts.telegram import TelegramDeliveryError
+from securegate.daily_log import DailyLogger
 from securegate.door import DoorControlError, create_door
 from securegate.rfid.enrollment import RFIDEnrollmentRepository
 from securegate.rfid.registry import CardRegistry, DEFAULT_DB, DEFAULT_KEY
@@ -198,7 +207,7 @@ def deliver_alert(notifier, alert, capture=None):
             notifier.send_message(caption + "\nNo se pudo enviar la fotografía.")
 
 
-def notification_worker(notifier, alerts, stop, capture=None):
+def notification_worker(notifier, alerts, stop, capture=None, daily_logger=None):
     while not stop.is_set() or not alerts.empty():
         try:
             alert = alerts.get(timeout=0.2)
@@ -206,13 +215,96 @@ def notification_worker(notifier, alerts, stop, capture=None):
             continue
         try:
             deliver_alert(notifier, alert, capture)
-            print("[ALERTA] Telegram confirmó la recepción.", flush=True)
+            _emit("[ALERTA] Telegram confirmó la recepción.", daily_logger)
         except TelegramDeliveryError as exc:
-            print(f"[ERROR] Telegram: {exc}", flush=True)
+            _emit(f"[ERROR] Telegram: {exc}", daily_logger)
         except Exception:
-            print("[ERROR] No se pudo enviar la alerta Telegram.", flush=True)
+            _emit("[ERROR] No se pudo enviar la alerta Telegram.", daily_logger)
         finally:
             alerts.task_done()
+
+
+def _emit(message, daily_logger=None, moment=None):
+    """Muestra por consola y anexa al log diario (sin romper el runtime)."""
+    print(message, flush=True)
+    if daily_logger is None:
+        return
+    try:
+        if message.startswith("[ACCESO]"):
+            level, text = "ACCESO", message[len("[ACCESO]"):].strip()
+        elif message.startswith("[ALERTA]"):
+            level, text = "ALERTA", message[len("[ALERTA]"):].strip()
+        elif message.startswith("[ERROR]"):
+            level, text = "ERROR", message[len("[ERROR]"):].strip()
+        elif message.startswith("[ADVERTENCIA]"):
+            level, text = "ADVERTENCIA", message[len("[ADVERTENCIA]"):].strip()
+        else:
+            level, text = "INFO", message.replace("[INFO]", "").strip()
+        daily_logger.write(level, text, moment=moment)
+    except Exception:
+        pass
+
+
+def command_worker(notifier, daily_logger, access_log, stop, poll_interval=5.0,
+                   default_limit=50):
+    """Polling getUpdates para responder /logs solo al chat autorizado."""
+    offset = None
+    while not stop.is_set():
+        try:
+            updates = notifier.get_updates(offset=offset, timeout=0)
+        except TelegramDeliveryError:
+            stop.wait(poll_interval)
+            continue
+        except Exception:
+            stop.wait(poll_interval)
+            continue
+        try:
+            for update in updates:
+                try:
+                    update_id = update.get("update_id")
+                    if update_id is not None:
+                        candidate = int(update_id) + 1
+                        offset = candidate if offset is None else max(offset, candidate)
+                except (AttributeError, ValueError, TypeError):
+                    continue
+                if not is_authorized(update, notifier.config.chat_id):
+                    continue
+                text, _ = extract_message(update)
+                command, arg = parse_command(text)
+                if command is None:
+                    continue
+                if command in ("/start", "/help"):
+                    notifier.send_message(
+                        "secureGate activo. Usa /logs [n] para ver el log de hoy "
+                        "(00:00 hasta ahora). Ej: /logs 50"
+                    )
+                elif command == "/logs":
+                    limit = parse_limit(arg) if arg else default_limit
+                    try:
+                        response = build_logs_text(
+                            daily_logger, access_log, limit=limit
+                        )
+                    except Exception:
+                        notifier.send_message("No se pudo leer el log de hoy.")
+                        continue
+                    if should_send_as_document(response):
+                        lines, _ = daily_logger.read_today(limit=limit)
+                        full = "\n".join(lines) if lines else "Sin eventos hoy."
+                        notifier.send_document(
+                            full,
+                            f"securegate-{daily_logger.today_label()}.log",
+                            caption=response[:1024],
+                        )
+                    else:
+                        notifier.send_message(response)
+                else:
+                    notifier.send_message("Comando no reconocido. Usa /logs.")
+        except TelegramDeliveryError:
+            pass
+        except Exception:
+            pass
+        if not updates:
+            stop.wait(poll_interval)
 
 
 def positive_float(value):
@@ -272,15 +364,40 @@ def main(default_mode="both"):
         type=positive_float,
         default=os.environ.get("SECUREGATE_DOOR_OPEN_SECONDS", "3"),
     )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=os.environ.get(
+            "SECUREGATE_LOG_DIR",
+            str(Path(__file__).resolve().parents[1] / "logs"),
+        ),
+        help="Carpeta de logs diarios securegate-AAAA-MM-DD.log.",
+    )
+    parser.add_argument(
+        "--logs-limit",
+        type=int,
+        default=int(os.environ.get("SECUREGATE_LOGS_LIMIT", "50")),
+        help="Líneas devueltas por /logs (1-200).",
+    )
+    parser.add_argument(
+        "--telegram-poll",
+        type=positive_float,
+        default=float(os.environ.get("SECUREGATE_TELEGRAM_POLL", "5")),
+        help="Segundos entre consultas getUpdates para /logs.",
+    )
     args = parser.parse_args()
     if args.methods != "rfid" and not args.url:
         parser.error("Se requiere URL de cámara para reconocimiento facial.")
+    if args.logs_limit < 1 or args.logs_limit > 200:
+        parser.error("--logs-limit debe estar entre 1 y 200.")
 
     reader = None
     door = None
     runtime_status = None
+    daily_logger = None
     try:
         timezone = load_timezone(args.timezone)
+        daily_logger = DailyLogger(args.log_dir, timezone)
         notifier = TelegramNotifier.from_environment()
         access_log = AccessLogRepository(args.rfid_database)
         runtime_status = RuntimeStatusRepository(args.rfid_database)
@@ -306,21 +423,29 @@ def main(default_mode="both"):
         print(f"[ERROR] No se pudo iniciar secureGate: {exc}")
         return 1
 
-    print(f"[INFO] Métodos: {args.methods}; zona horaria: {args.timezone}")
-    print("[INFO] Autorización alternativa: facial O RFID.")
+    _emit(f"[INFO] Métodos: {args.methods}; zona horaria: {args.timezone}", daily_logger)
+    _emit("[INFO] Autorización alternativa: facial O RFID.", daily_logger)
     if args.door_mode == "simulate":
-        print("[INFO] Puerta en simulación: no se activa ningún GPIO.")
+        _emit("[INFO] Puerta en simulación: no se activa ningún GPIO.", daily_logger)
     else:
-        print(
+        _emit(
             f"[INFO] Puerta física: GPIO BCM {args.relay_pin}, "
             f"activo en {args.relay_active.upper()}.",
+            daily_logger,
         )
-    print("[INFO] Retirar rostro/tarjeta entre intentos. Ctrl+C para detener.")
-    print("[INFO] Telegram habilitado." if notifier else "[ADVERTENCIA] Telegram deshabilitado: faltan token y chat.")
+    _emit("[INFO] Retirar rostro/tarjeta entre intentos. Ctrl+C para detener.", daily_logger)
+    _emit(
+        "[INFO] Telegram habilitado. Usa /logs para ver el log de hoy."
+        if notifier
+        else "[ADVERTENCIA] Telegram deshabilitado: faltan token y chat.",
+        daily_logger,
+    )
+    _emit(f"[INFO] Log diario: {daily_logger.path_for()}", daily_logger)
     events = Queue(maxsize=32)
     alerts = Queue(maxsize=8)
     stop = Event()
     notification_stop = Event()
+    command_stop = Event()
     controller = AccessController(args.alert_cooldown)
     workers = []
     if face:
@@ -336,6 +461,7 @@ def main(default_mode="both"):
             daemon=True,
         ))
     sender = None
+    commander = None
     if notifier:
         capture = None
         if args.url:
@@ -344,15 +470,20 @@ def main(default_mode="both"):
                 from runtime_recognize_espcam import capture_frame
                 return capture_frame(args.url, args.timeout)
         sender = Thread(target=notification_worker, args=(
-            notifier, alerts, notification_stop, capture,
+            notifier, alerts, notification_stop, capture, daily_logger,
         ), name="securegate-telegram", daemon=True)
         sender.start()
+        commander = Thread(target=command_worker, args=(
+            notifier, daily_logger, access_log, command_stop,
+            args.telegram_poll, args.logs_limit,
+        ), name="securegate-commands", daemon=True)
+        commander.start()
     for worker in workers:
         worker.start()
     try:
         runtime_status.update("running", args.methods, args.door_mode)
     except (OSError, ValueError, sqlite3.Error):
-        print("[ADVERTENCIA] No se pudo publicar el estado inicial del runtime.")
+        _emit("[ADVERTENCIA] No se pudo publicar el estado inicial del runtime.", daily_logger)
     last_heartbeat = time.monotonic()
     try:
         while True:
@@ -360,29 +491,33 @@ def main(default_mode="both"):
                 try:
                     runtime_status.update("running", args.methods, args.door_mode)
                 except (OSError, ValueError, sqlite3.Error):
-                    print("[ADVERTENCIA] No se pudo actualizar el heartbeat.", flush=True)
+                    _emit("[ADVERTENCIA] No se pudo actualizar el heartbeat.", daily_logger)
                 last_heartbeat = time.monotonic()
             try:
                 event = events.get(timeout=0.5)
             except Empty:
                 if not any(worker.is_alive() for worker in workers):
-                    print("[ERROR] Todos los lectores se detuvieron.")
+                    _emit("[ERROR] Todos los lectores se detuvieron.", daily_logger)
                     return 1
                 continue
             if isinstance(event, str):
-                print(event, flush=True)
+                _emit(event, daily_logger)
                 continue
             result = f"USUARIO VÁLIDO: {event.user}" if event.granted else "USUARIO NO AUTORIZADO"
             alert = controller.process(event)
             restricted = is_restricted_time(event.occurred_at)
-            print(f"[ACCESO] {event.method}: {result}; rechazos consecutivos={controller.failures}", flush=True)
+            _emit(
+                f"[ACCESO] {event.method}: {result}; rechazos consecutivos={controller.failures}",
+                daily_logger,
+                moment=event.occurred_at,
+            )
             if alert:
-                print(f"[ALERTA] {'; '.join(alert.reasons)}", flush=True)
+                _emit(f"[ALERTA] {'; '.join(alert.reasons)}", daily_logger, moment=event.occurred_at)
                 if notifier:
                     try:
                         alerts.put_nowait(alert)
                     except Full:
-                        print("[ERROR] Cola Telegram llena; alerta no enviada. Revisar conexión.", flush=True)
+                        _emit("[ERROR] Cola Telegram llena; alerta no enviada. Revisar conexión.", daily_logger)
 
             door_status = "not_requested"
             if event.granted:
@@ -390,7 +525,7 @@ def main(default_mode="both"):
                     door_status = door.open().status
                 except DoorControlError as exc:
                     door_status = "error"
-                    print(f"[ERROR] Puerta: {exc}", flush=True)
+                    _emit(f"[ERROR] Puerta: {exc}", daily_logger)
 
             try:
                 access_log.record(
@@ -400,19 +535,22 @@ def main(default_mode="both"):
                     door_status,
                 )
             except (OSError, ValueError, sqlite3.Error) as exc:
-                print(f"[ERROR] No se pudo guardar el registro de acceso: {exc}", flush=True)
+                _emit(f"[ERROR] No se pudo guardar el registro de acceso: {exc}", daily_logger)
     except KeyboardInterrupt:
-        print("\n[INFO] Deteniendo secureGate.")
+        _emit("\n[INFO] Deteniendo secureGate.", daily_logger)
         return 0
     finally:
         stop.set()
         for worker in workers:
             worker.join(timeout=args.timeout + 2)
         notification_stop.set()
+        command_stop.set()
         if sender:
             sender.join(timeout=12)
             if sender.is_alive():
-                print("[ADVERTENCIA] Hay alertas pendientes que se perderán al salir.")
+                _emit("[ADVERTENCIA] Hay alertas pendientes que se perderán al salir.", daily_logger)
+        if commander:
+            commander.join(timeout=12)
         if door:
             try:
                 door.close()
