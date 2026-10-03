@@ -17,8 +17,11 @@ def render(request, name, context=None, status_code=200, headers=None):
         "poll_status_ms": settings.poll_status_ms,
         "operator": getattr(request.state, "operator", None),
         "csrf_token": getattr(request.state, "csrf_token", ""),
-        "flashes": getattr(request.state, "flashes", []),
+        "flashes": [],
     }
+    # Los avisos se consumen al mostrar una página, no en los parciales de polling.
+    if not name.startswith("partials/") and "session" in request.scope:
+        data["flashes"] = request.session.pop("flash", [])
     data.update(context or {})
     return templates.TemplateResponse(
         request, name, data, status_code=status_code, headers=headers

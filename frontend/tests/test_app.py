@@ -1,14 +1,3 @@
-import pytest
-from fastapi.testclient import TestClient
-
-from app.main import create_app
-
-
-@pytest.fixture
-def client(settings, api_transport):
-    return TestClient(create_app(settings, api_transport=api_transport), follow_redirects=False)
-
-
 def test_la_raiz_redirige_al_dashboard(client):
     for path in ("/", "/dashboard"):
         response = client.get(path)
@@ -24,6 +13,12 @@ def test_estaticos_vendorizados_y_sin_urls_externas(client):
 
 
 def test_cabeceras_de_seguridad(client):
-    response = client.get("/dashboard/static/app.css")
+    response = client.get("/dashboard/login")
     assert response.headers["x-frame-options"] == "DENY"
     assert "default-src 'self'" in response.headers["content-security-policy"]
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_pagina_inexistente(admin):
+    response = admin.get("/dashboard/no-existe")
+    assert response.status_code == 404 and "No encontrado" in response.text
