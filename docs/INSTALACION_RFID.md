@@ -1,245 +1,242 @@
-# Instalación RC522 y alertas de secureGate
+# Instalación RC522 en Raspberry Pi 3 — secureGate
 
-Destino: Raspberry Pi **3 o 4**, Raspberry Pi OS y Python **3.9 a 3.12**.
-La placa de la foto es RFID-RC522 V1.33. El chip trabaja con tarjetas ISO/IEC
-14443-A de 13,56 MHz. La apariencia de la tarjeta/llavero no confirma su chip:
-verificar compatibilidad con `scan`. Este adaptador admite UID de 4 o 7 bytes.
-No admite tarjetas de 125 kHz, Pi Pico ni garantiza Raspberry Pi 5.
+## Objetivo
 
-El resultado es autorización por **rostro O tarjeta registrada**. El control de
-puerta comienza en modo simulado y registra la orden sin energizar GPIO. Existe
-un driver GPIO configurable, pero no se debe habilitar hasta confirmar el módulo,
-pin BCM y polaridad del relé. El Reed todavía está pendiente. Telegram no decide
-ni condiciona la apertura.
+Configurar el lector RFID RC522 sobre Raspberry Pi 3 para utilizarlo como método alternativo de acceso en secureGate.
 
-## 1. Conectar con la Raspberry apagada y desenchufada
+La lógica del sistema es:
 
-Si el módulo viene sin pines, soldar una tira de 8 pines. Usar cables cortos y
-conectar siguiendo los nombres impresos, no la orientación de la foto.
-**Alimentar a 3,3 V, nunca a 5 V.** No conectar la cerradura a estos pines.
+```text
+rostro válido OR tarjeta RFID válida
+→ acceso autorizado
+```
 
-| Pin del RC522 | Pin físico Raspberry (conector de 40 pines) | Función |
+RFID no funciona como segundo factor obligatorio.
+
+## Hardware
+
+- Raspberry Pi 3B
+- Módulo RFID RC522
+- Tarjeta o llavero compatible con 13,56 MHz / ISO 14443-A
+- Cables Dupont
+
+## Cableado RC522 → Raspberry Pi 3B
+
+Con la Raspberry Pi apagada, conectar:
+
+| RC522 | Pin físico RPi3 | GPIO / señal |
 |---|---:|---|
-| SDA / SS | 24 | GPIO8, SPI0 CE0 (no I²C) |
-| SCK | 23 | GPIO11, reloj SPI |
-| MOSI | 19 | GPIO10 |
-| MISO | 21 | GPIO9 |
-| IRQ | Sin conectar | Se usa consulta periódica |
-| GND | 6 | Tierra |
+| 3.3V | 1 | 3.3 V |
 | RST | 22 | GPIO25 |
-| 3.3V | 1 | Alimentación de 3,3 V |
+| GND | 6 | GND |
+| IRQ | — | No conectar |
+| MISO | 21 | GPIO9 / SPI0 MISO |
+| MOSI | 19 | GPIO10 / SPI0 MOSI |
+| SCK | 23 | GPIO11 / SPI0 SCLK |
+| SDA / SS | 24 | GPIO8 / SPI0 CE0 |
 
-El programa utiliza numeración **BCM** internamente (RST=GPIO25); la tabla usa
-**pines físicos**. No reservar estos pines para otros sensores o relés.
+**Importante:** el RC522 trabaja a 3,3 V. No conectarlo a 5 V.
 
-## 2. Obtener el código
+## Referencia rápida del conector GPIO de Raspberry Pi 3B
 
-Si ya integraron esta mejora en el proyecto original, dentro de `secureGate`:
+Mirando la placa con USB/Ethernet hacia la derecha y el conector GPIO en la parte superior:
 
-```bash
-git switch main
-git pull --ff-only
+```text
+  3V3  (1)  (2)  5V
+GPIO2  (3)  (4)  5V
+GPIO3  (5)  (6)  GND
+GPIO4  (7)  (8)  GPIO14
+  GND  (9) (10)  GPIO15
+GPIO17 (11) (12) GPIO18
+GPIO27 (13) (14) GND
+GPIO22 (15) (16) GPIO23
+  3V3 (17) (18) GPIO24
+GPIO10 (19) (20) GND
+ GPIO9 (21) (22) GPIO25
+GPIO11 (23) (24) GPIO8
+  GND (25) (26) GPIO7
+GPIO0  (27) (28) GPIO1
+GPIO5  (29) (30) GND
+GPIO6  (31) (32) GPIO12
+GPIO13 (33) (34) GND
+GPIO19 (35) (36) GPIO16
+GPIO26 (37) (38) GPIO20
+  GND (39) (40) GPIO21
 ```
 
-Para probar la rama antes de integrarla, desde una copia limpia del proyecto:
+Para el RC522, los pines usados son:
 
-```bash
-git fetch https://github.com/danyto49/secureGate.git feature/rfid-access-failure-alerts
-git switch -c prueba-rfid FETCH_HEAD
+```text
+1  → 3.3V
+6  → GND
+19 → MOSI
+21 → MISO
+22 → RST
+23 → SCK
+24 → SDA / SS
 ```
 
-No cambiar de rama si hay cambios locales pendientes sin guardarlos primero.
+## Habilitar SPI
 
-## 3. Habilitar SPI e instalar
-
-Encender la Raspberry, abrir terminal y ejecutar:
+Ejecutar:
 
 ```bash
 sudo raspi-config
 ```
 
-Elegir **Interface Options → SPI → Enable** y reiniciar. Después:
+Luego:
+
+```text
+Interface Options
+→ SPI
+→ Enable
+```
+
+Reiniciar si se solicita.
+
+Verificar:
 
 ```bash
-ls /dev/spidev0.0
+ls -l /dev/spidev0.0
+```
+
+Si aparece el dispositivo, SPI está habilitado.
+
+## Actualizar secureGate en la Raspberry Pi 3
+
+```bash
 cd ~/secureGate
-sudo apt update
-sudo apt install -y python3-venv python3-dev build-essential
-python3 -m venv .venv
+
+git pull origin main
+
 source .venv/bin/activate
-python -m pip install -r requirements.txt -r requirements-rfid.txt -r requirements-api.txt
+
+python -m pip install -r requirements.txt \
+  -r requirements-rfid.txt \
+  -r requirements-api.txt
 ```
 
-Si el entorno `.venv` ya existe, conservarlo y activar el existente.
-El usuario del servicio debe pertenecer a `spi` y `gpio`:
+## Base de datos biométrica
+
+Antes de iniciar RFID, copiar a la Raspberry Pi la base biométrica final:
+
+```text
+data/db/securegate.db
+```
+
+y la clave biométrica:
+
+```text
+local/keys/k_bio
+```
+
+Se recomienda realizar un backup antes de continuar:
 
 ```bash
-sudo usermod -aG spi,gpio "$USER"
+cp data/db/securegate.db \
+  data/db/securegate_backup_pre_rfid.db
 ```
 
-Cerrar sesión y volver a entrar si se agregaron grupos. Ejecutar el programa
-como usuario normal, no con `sudo python` (se perderían entorno y credenciales).
-Para rostro deben estar disponibles los modelos, la base y `k_bio` ya usados
-por el prototipo. No hace falta `k_bio` ni modelos en modo sólo RFID.
-
-## 4. Registrar las tarjetas
-
-Detener el runtime antes de abrir el lector para enrolamiento. Hacer copia
-protegida de la base existente si ya hay usuarios (fuera de Git).
+Luego ejecutar:
 
 ```bash
 python raspberry/init_db.py
-python admin/manage_rfid.py init
-python admin/manage_rfid.py scan
 ```
 
-`init_db.py` crea las tablas faltantes, no borra usuarios/templates existentes.
-El segundo comando crea `local/keys/k_rfid` sólo si no existe y añade la tabla
-RFID. `scan` espera hasta 30 segundos; acercar UNA tarjeta a 1–3 cm.
+Este comando migra/inicializa la estructura necesaria sin eliminar los usuarios ni los templates biométricos existentes.
 
-Registrar la tarjeta blanca para un usuario, acercándola al lector:
+## Inicializar RFID
+
+Ejecutar:
+
+```bash
+python admin/manage_rfid.py init
+```
+
+Este proceso prepara la funcionalidad RFID y utiliza la clave:
+
+```text
+local/keys/k_rfid
+```
+
+`K_rfid` debe mantenerse fuera de Git y es independiente de `K_bio`.
+
+## Enrolar tarjetas RFID
+
+Para enrolar una tarjeta:
 
 ```bash
 python admin/manage_rfid.py enroll user_001
 ```
 
-Repetir para el llavero. Puede asociarse al mismo usuario o a otro:
+El programa espera que se acerque la tarjeta al RC522.
+
+Para una segunda tarjeta:
 
 ```bash
 python admin/manage_rfid.py enroll user_002
 ```
 
-Si `user_001` ya tiene rostro enrolado, queda con ambas opciones. Si no existe,
-se crea como usuario sólo RFID. No se escriben sectores de la tarjeta ni se
-modifican los embeddings existentes. Una tarjeta de otro usuario no se reasigna
-automáticamente; un usuario deshabilitado no se reactiva automáticamente.
+No se almacenan archivos RFID equivalentes a las fotografías biométricas.
 
-Para deshabilitar una tarjeta, presentarla cuando lo solicita:
+El flujo es:
 
-```bash
-python admin/manage_rfid.py revoke
+```text
+tarjeta
+↓
+RC522 lee UID
+↓
+normalización
+↓
+HMAC-SHA-256(K_rfid, UID)
+↓
+uid_digest
+↓
+securegate.db
+↓
+tabla rfid_credentials
 ```
 
-Los UID no se guardan en claro: se guarda un HMAC con `k_rfid`. Conservar esa
-clave, protegerla con permisos `600` y respaldarla de forma segura. Al mover
-la base a otra Raspberry debe trasladarse también `k_rfid` por un canal seguro.
-No reemplazarla: las tarjetas ya registradas dejarían de coincidir.
-No publicar UID, claves, bases, tokens ni fotografías en GitHub.
+El UID no se guarda en claro.
 
-## 5. Configurar Telegram y ejecutar
-
-El destinatario debe haber iniciado una conversación con el bot o agregado el
-bot al grupo privado. Cargar token sin mostrarlo ni dejarlo en el historial:
+## Verificar credenciales RFID
 
 ```bash
-read -r -s -p "Token Telegram: " TELEGRAM_BOT_TOKEN
-export TELEGRAM_BOT_TOKEN
-echo
-read -r -p "ID del chat: " TELEGRAM_CHAT_ID
-export TELEGRAM_CHAT_ID
-python raspberry/runtime_access.py http://192.168.1.95/capture
+sqlite3 data/db/securegate.db \
+'SELECT u.external_id, COUNT(r.credential_id)
+ FROM users u
+ LEFT JOIN rfid_credentials r
+   ON r.user_id = u.user_id
+  AND r.active = 1
+ GROUP BY u.user_id
+ ORDER BY u.external_id;'
 ```
 
-Ese comando habilita **ambos métodos**. La URL debe coincidir con su ESP-CAM.
-La puerta permanece en simulación y cada decisión queda en `access_events`.
-Para probar RFID sin modelos/cámara:
+## Probar sólo RFID
 
 ```bash
 python raspberry/runtime_access.py --methods rfid
 ```
 
-Consultar o exportar registros:
+## Probar sistema completo
 
 ```bash
-python admin/access_report.py --limit 50
-python admin/access_report.py --date 2026-10-01 --csv informe.csv
+python raspberry/runtime_access.py \
+  http://192.168.1.95/capture
 ```
 
-Después de validar eléctricamente el relé, el modo físico se ejecuta indicando
-el pin en numeración BCM y si se activa en alto o bajo:
+Con ese comando quedan habilitados ambos métodos:
 
-```bash
-python raspberry/runtime_access.py --methods rfid \
-  --door-mode gpio \
-  --relay-pin PIN_BCM_CONFIRMADO \
-  --relay-active high \
-  --door-open-seconds 3
+```text
+biometría OR RFID
 ```
 
-`PIN_BCM_CONFIRMADO` es un marcador, no un comando listo para copiar. Sustituirlo
-recién después de revisar la placa. El GPIO es de 3,3 V: no aplicarle 5 V ni 12 V.
+## Notas de seguridad
 
-Para rostro solamente (comando anterior compatible):
-
-```bash
-python raspberry/runtime_recognize_espcam.py http://192.168.1.95/capture
-```
-
-Las variables duran esa sesión. Para instalación permanente, el encargado del
-servicio debe cargarlas desde un archivo privado del servicio, no desde Git.
-Si faltan ambas, las alertas aparecen sólo en consola. Si falta una, el arranque
-falla para evitar una configuración incompleta.
-
-La API para frontend se ejecuta en un proceso separado y comparte SQLite en
-modo WAL. Ver [API_FRONTEND.md](API_FRONTEND.md) para token, CORS, endpoints y
-documentación OpenAPI. La API no controla todavía el relé ni abre el RC522.
-
-## 6. Comprobar el resultado
-
-1. Una tarjeta registrada debe imprimir `RFID: USUARIO VÁLIDO: user_...`.
-2. Un rostro enrolado debe ser aceptado sin exigir tarjeta (regla 2 de 3, 0,45).
-3. Una tarjeta desconocida debe producir UN rechazo aunque permanezca encima.
-   Retirarla al menos un segundo y volverla a presentar para otro intento.
-4. Para otro intento facial, retirarse hasta ver `Rostro retirado; listo para
-   otro intento` y volver. Los tres frames de una decisión son UN intento.
-5. Tres rechazos consecutivos generan Telegram incluso de día. Se pueden
-   mezclar: RFID rechazado → rostro rechazado → RFID rechazado = alerta.
-6. Un éxito por cualquiera de los métodos reinicia el contador.
-7. Fuera de horario se alerta por intentos aceptados y rechazados:
-   lunes–viernes [21:00, 06:00), sábado–domingo [17:00, 09:00).
-8. Si ambas reglas coinciden, se envía un solo mensaje con ambos motivos.
-9. Desconectar la cámara: RFID debe continuar; la alerta lleva texto sin foto.
-10. Para probar tres fallos RFID sin que el rostro válido reinicie el contador,
-    usar `--methods rfid` con tres presentaciones de una tarjeta desconocida.
-
-Detener con Ctrl+C. El lector libera únicamente GPIO25 y SPI, no los GPIO
-de otros sensores. Sólo debe correr un proceso que use RC522 a la vez.
-
-## Comportamiento y límites
-
-- El contador es global por puerta, no por persona: no se conoce la identidad
-  de todos los desconocidos. Cuenta decisiones en el orden de recepción y se
-  reinicia por éxito o reinicio del programa. Avisa en los rechazos 3, 6, 9...
-- El cooldown de 60 s por método/resultado evita repetir la alerta horaria.
-  No suprime la alerta de tres fallos. Es ajustable con `--alert-cooldown`.
-- Cámara sin conexión, ausencia de rostro/tarjeta y errores técnicos no cuentan
-  como denegación de credenciales. Varias caras/tarjetas no conceden acceso.
-- Para rostro se usa una de las tres capturas de la decisión. Para RFID, la
-  foto se solicita cuando se procesa la alerta: puede tener un pequeño retraso
-  y no prueba que la persona retratada sea quien presentó la tarjeta.
-- Los métodos trabajan en hilos independientes. Telegram usa otro hilo y una
-  cola limitada (8 alertas); si se llena o falla el envío se informa en consola.
-  No existe almacenamiento persistente ni entrega garantizada/reintentos.
-- Esta integración autoriza por UID. **Un UID puede copiarse**: el HMAC protege
-  la base, no convierte la tarjeta en una credencial resistente a clonación.
-  Para una puerta de alta seguridad se necesita autenticación criptográfica de
-  tarjetas y un lector compatible. Las fotos no confirman apertura de puerta.
-
-## Si algo falla
-
-| Síntoma | Revisar |
-|---|---|
-| No existe `/dev/spidev0.0` | Habilitar SPI y reiniciar |
-| Permiso denegado en SPI/GPIO | Grupos del usuario; cerrar y abrir sesión |
-| RC522 versión `0x00` o `0xFF` | Alimentación, GND, SDA/CE0, SPI, soldaduras |
-| No lee tarjeta | Compatibilidad 13,56 MHz, distancia, una sola tarjeta |
-| Tarjeta rechazada | Alta, estado del usuario/tarjeta, misma base y `k_rfid` |
-| Telegram falla | Token/chat, bot iniciado, Internet y reloj sincronizado |
-
-Fuentes de cableado y biblioteca: [pi-rc522](https://github.com/ondryaso/pi-rc522#connecting),
-[documentación Raspberry Pi](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html),
-[MFRC522 de NXP](https://www.nxp.com/products/rfid-nfc/nfc-hf/nfc-readers/standard-performance-mifare-and-ntag-frontend:MFRC52202HN1).
-
-Validación sin hardware: `python -m unittest discover -s tests -v`.
-Las pruebas simulan lector/cámara/Telegram; completar los pasos 1–10 físicamente
-antes de afirmar que está validado en la instalación.
+- No alimentar RC522 con 5 V.
+- No almacenar UID RFID en claro.
+- Mantener `K_rfid` fuera de SQLite y Git.
+- Mantener `K_rfid` separada de `K_bio`.
+- No exponer UID desde frontend.
+- No sobrescribir la base operativa de la Raspberry con una copia antigua después de enrolar RFID.
+- El modo de puerta permanece en simulación por defecto hasta validar el relé físicamente.
