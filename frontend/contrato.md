@@ -1,41 +1,36 @@
 # contrato.md — Frontend secureGate ↔ API secureGate
 
-> **Versión:** 1.0 · basada en el commit `d71050b` ("Integra backend, RFID, logs y control de acceso") y en `docs/API_FRONTEND.md`.
+> **Versión:** 1.1 · basada en el commit `d71050b` ("Integra backend, RFID, logs y control de acceso") y en `docs/API_FRONTEND.md`.
 > **Fuente de verdad del backend:** `raspberry/securegate/api.py` y `http://127.0.0.1:8000/openapi.json`. Si difieren de este documento, gana el código del backend y este contrato se actualiza por PR.
+> **Cambio de alcance (v1.1):** el front se sirve directo en `0.0.0.0:8080`, sin nginx; no se modifica nada de la Raspberry; el mock usa el puerto 8100; F8 es sólo documentación.
 
 ---
 
 ## 1. Arquitectura y red
 
 ```
-Cualquier dispositivo de la red 192.168.1.0/24
-        │  HTTP :80
+Cualquier dispositivo de la red del lab
+        │  HTTP :8080   →  http://IP_PI:8080/dashboard/
         ▼
-nginx (Raspberry Pi, IP_PI)
-  ├─ /            → 302 a /dashboard/
-  └─ /dashboard/  → 127.0.0.1:8080   Front (FastAPI + Jinja + HTMX)  ← NUESTRO
-                                        │ Bearer token (sólo server-side)
-                                        ▼
-                                     127.0.0.1:8000   API secureGate  ← NO ES NUESTRA
-                                        │
-                                     SQLite + runtime_access (GPIO, RC522, ESP-CAM)
+Front (FastAPI + Jinja + HTMX) en la Raspberry Pi, 0.0.0.0:8080   ← NUESTRO
+        │ Bearer token (sólo server-side)
+        ▼
+127.0.0.1:8000   API secureGate  ← NO ES NUESTRA
+        │
+SQLite + runtime_access (GPIO, RC522, ESP-CAM)
 ```
 
 | Servicio | Escucha en | Accesible desde la red | Dueño |
 |---|---|---|---|
-| nginx | `0.0.0.0:80` | **Sí** | Nosotros (config) |
-| Front | `127.0.0.1:8080` | No (sólo vía nginx) | Nosotros |
-| API secureGate | `127.0.0.1:8000` | **No** | Backend |
-| SSH | `0.0.0.0:22` | Sólo LAN | Integración |
+| Front | `0.0.0.0:8080` | **Sí** (`http://IP_PI:8080/dashboard/`) | Nosotros |
+| API secureGate | lo que defina el backend (puerto 8000) | No depende de nosotros | Backend |
 
 Reglas de red:
-- **IP de la Pi:** debe ser fija y distinta de `192.168.1.95`, que es la ESP-CAM. Se recomienda reservarla por DHCP en el router (ej. `192.168.1.50`, gateway `192.168.1.1`, máscara `/24`).
-- **La API se ejecuta con `--host 127.0.0.1`.** En la copia instalada de `securegate-api.service` (en `/etc/systemd/system/`, no en el repo) se cambia `--host 0.0.0.0` por `--host 127.0.0.1`. Como el navegador nunca llama a la API, **no hace falta CORS**: `SECUREGATE_CORS_ORIGINS` queda vacío.
-- **Firewall (ufw):**
-  - permitir `80/tcp` y `22/tcp` desde `192.168.1.0/24`;
-  - denegar todo lo demás entrante (8000 y 8080 quedan cerrados aunque alguien los abra por error).
-- **mDNS (opcional):** `avahi-daemon` con hostname `securegate`, para entrar con `http://securegate.local/dashboard`. Algunos Android viejos no resuelven `.local`, así que la URL por IP siempre tiene que funcionar.
-- **HTTP plano** es aceptable sólo en la red controlada del lab, igual que la API. Si se agrega HTTPS más adelante, la cookie pasa a `Secure`.
+- **No modificamos nada de la Raspberry.** Ni nginx, ni ufw, ni la IP, ni el servicio o la configuración de la API, ni CORS. El front es un proceso más que se suma; todo lo demás sigue igual con o sin él. Las sugerencias opcionales (nginx, IP fija, no exponer el 8000) están en `PEDIDOS_BACKEND.md`, sección "Recomendaciones para integración".
+- **El front se sirve directo:** `uvicorn app.main:app --host 0.0.0.0 --port 8080`, sin `--proxy-headers` y **con un solo worker** (sin `--workers`; ver §3). `GET /` redirige a `/dashboard/`.
+- **El front llama a la API por loopback** (`http://127.0.0.1:8000` en la Pi). Como el navegador nunca llama a la API, el front **no necesita CORS**.
+- **IP de la Pi:** se usa el marcador `IP_PI` en docs y ejemplos. Nunca es `192.168.1.95`, que es la ESP-CAM.
+- **HTTP plano** es aceptable sólo en la red controlada del lab, igual que la API. Por eso el login de operadores, el CSRF y el rate limit de §3 son **obligatorios**, y la cookie de sesión va sin `Secure`. Si se agrega HTTPS más adelante, la cookie pasa a `Secure`.
 - **Ningún archivo del repo contiene la contraseña del Wi-Fi.** La red se configura en la Pi, fuera de Git.
 
 ---
@@ -44,7 +39,7 @@ Reglas de red:
 
 | Variable | Ejemplo | Uso |
 |---|---|---|
-| `SECUREGATE_API_URL` | `http://127.0.0.1:8000` | Base de la API |
+| `SECUREGATE_API_URL` | `http://127.0.0.1:8100` (desarrollo, mock) · `http://127.0.0.1:8000` (en la Pi) | Base de la API |
 | `SECUREGATE_API_TOKEN` | *(≥ 32 caracteres, el mismo que la API)* | Bearer token; nunca sale del servidor |
 | `FRONT_SESSION_SECRET` | *(≥ 32 caracteres aleatorios)* | Firma de la cookie de sesión |
 | `FRONT_OPERATORS_FILE` | `/etc/securegate/frontend-operators.json` | Operadores con hash bcrypt (permisos `600`) |
@@ -68,7 +63,9 @@ La API no tiene login de personas, sólo un token de administración. El front a
 - **Archivo de operadores:** `FRONT_OPERATORS_FILE` es un JSON de la forma `{"usuarios":[{"usuario":"admin","hash":"$2b$...","rol":"admin","activo":true}]}`. Se administra con `cli.py add-user|disable-user|set-password` y nunca se commitea.
 - **Sesión:** una cookie firmada, `HttpOnly` y `SameSite=Lax`, que vence a las `FRONT_SESSION_HOURS` horas. Al cerrar sesión se limpia.
 - **CSRF:** cada formulario y cada POST, PATCH o DELETE de HTMX lleva un token CSRF de sesión (header `X-CSRF-Token`). Si falta o no coincide, devuelve 403.
-- **Rate limit de login:** 5 intentos fallidos por IP cada 5 minutos; después, bloqueo de 5 minutos.
+- **Rate limit de login:** 5 intentos fallidos por IP cada 5 minutos; después, bloqueo de 5 minutos. La IP es la del socket (`request.client.host`): no hay proxy delante, así que no se usa `X-Forwarded-For`.
+- **Un solo worker.** El rate limit y las cachés del BFF (lista de usuarios, último estado conocido) viven en la memoria del proceso: uvicorn corre **sin `--workers`**. Con más de un worker el límite de intentos se multiplicaría y la caché quedaría inconsistente.
+- Login, CSRF y rate limit son **obligatorios**: el front está expuesto directamente a la red del lab.
 - Cualquier ruta sin sesión redirige a `/dashboard/login`.
 
 ---
@@ -351,7 +348,13 @@ Cada alerta enlaza al evento correspondiente en el historial.
 
 ## 7. Desarrollo sin Raspberry: `dev/mock_api.py`
 
-Es una API falsa con **los mismos endpoints, campos, códigos de error y validaciones** que §4, con datos en memoria. Tiene que incluir:
+Es una API falsa con **los mismos endpoints, campos, códigos de error y validaciones** que §4, con datos en memoria.
+
+- Escucha en **`127.0.0.1:8100`** (configurable con `MOCK_PORT`), **nunca en 8000**, para no pisar ni confundirse con la API real.
+- Es **sólo para desarrollo y tests**: nunca se instala ni se corre en la Pi.
+- **No importa nada de `raspberry/`**: los modelos y los textos de `detail` están copiados en el archivo, así el front se instala y se testea sin las dependencias del backend.
+
+Tiene que incluir:
 - unos 6 usuarios con combinaciones distintas: con rostro, con tarjeta, inactivo, sin nombre;
 - un generador que agrega un evento aleatorio cada 5 s, cubriendo todos los `door_status`, desconocidos, fuera de horario y alertas;
 - un heartbeat que se puede apagar con `?offline=1` en `/mock/control`;
@@ -360,42 +363,21 @@ Es una API falsa con **los mismos endpoints, campos, códigos de error y validac
 
 ---
 
-## 8. Despliegue en la Raspberry (fase F8)
+## 8. Despliegue en la Raspberry (fase F8: sólo documentación)
 
-Lo que entrega el front, con marcadores y sin secretos:
+El front **no modifica la Raspberry**: F8 entrega documentación y un ejemplo de unit, con marcadores y sin secretos. Quien integra decide si los instala.
 
-- `deploy/nginx-securegate.conf`:
-  ```nginx
-  server {
-      listen 80 default_server;
-      server_name _;
-      client_max_body_size 1m;
-      location = / { return 302 /dashboard/; }
-      location /dashboard/ {
-          proxy_pass http://127.0.0.1:8080;
-          proxy_set_header Host $host;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-          proxy_set_header X-Forwarded-Proto $scheme;
-      }
-  }
-  ```
-- `deploy/securegate-frontend.service`:
+- `deploy/INSTALACION.md`: crear el venv, instalar dependencias, armar `/etc/securegate/frontend.env` (con `SECUREGATE_API_URL=http://127.0.0.1:8000`), crear operadores con `cli.py`, arrancar y verificar.
+- `deploy/securegate-frontend.service.example`:
   - `User=USUARIO_RPI` y `WorkingDirectory=/home/USUARIO_RPI/secureGate/frontend`;
   - `EnvironmentFile=/etc/securegate/frontend.env`;
-  - `ExecStart=.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --proxy-headers --forwarded-allow-ips 127.0.0.1`;
+  - `ExecStart=.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080` (sin `--proxy-headers` y **sin `--workers`**: un solo proceso);
   - `Restart=on-failure`, `NoNewPrivileges=true`, `PrivateTmp=true`;
   - `After=securegate-api.service`.
-- `deploy/RED.md`, con los pasos para:
-  - reservar la IP de la Pi por DHCP o fijarla con `nmcli` (nunca `.95`);
-  - configurar ufw (§1);
-  - instalar avahi (opcional);
-  - cambiar la API a `--host 127.0.0.1` en la copia instalada del servicio;
-  - verificar desde otro dispositivo.
 
 **Verificación desde otra máquina de la red:**
-- `http://IP_PI/dashboard` → pantalla de login.
-- `curl -m 3 http://IP_PI:8000/health` → **tiene que fallar**, porque la API no está expuesta.
-- `curl -m 3 http://IP_PI:8080/` → **tiene que fallar**, porque el front sólo se accede por nginx.
+- `http://IP_PI:8080/dashboard/` → pantalla de login.
+- `http://IP_PI:8080/` → redirige a `/dashboard/`.
 
 ---
 
@@ -423,12 +405,16 @@ El front funciona sin estos cambios usando los fallbacks indicados. Si el backen
 | B6 | `created_at` de usuarios con zona horaria | Se asume UTC (§9) |
 | B7 | Alta facial desde la API | Texto informativo, sin botón (§6.2) |
 
+`PEDIDOS_BACKEND.md` tiene además:
+- **Diferencias encontradas con la API real** (D1, D2, …): comportamientos de `api.py` que no coinciden con §4 y cómo se adaptó el front.
+- **Recomendaciones para integración** (opcionales, no las aplica el front): poner nginx delante, fijar la IP de la Pi, no exponer el puerto 8000 a la red.
+
 ---
 
 ## 11. Checklist de aceptación (en la Pi, desde otro dispositivo)
 
-- [ ] Desde una PC y un celular de la red, `http://IP_PI/dashboard` abre el login; sin login, todas las rutas redirigen.
-- [ ] Los puertos 8000 y 8080 no responden desde otra máquina.
+- [ ] Desde una PC y un celular de la red, `http://IP_PI:8080/dashboard/` abre el login; sin login, todas las rutas redirigen.
+- [ ] Desde otro equipo, `http://IP_PI:8080/dashboard/` muestra el login.
 - [ ] Con el runtime corriendo se ve ONLINE con un heartbeat de menos de 15 s; al detenerlo pasa a OFFLINE en unos 20 s como máximo.
 - [ ] El modo de acceso y el modo de puerta coinciden con `SECUREGATE_METHODS` y `SECUREGATE_DOOR_MODE`; en `simulate` se ve el banner ámbar.
 - [ ] Un acceso con tarjeta o rostro aparece en tiempo real en menos de 3 s, con usuario, método, resultado, fecha y estado de la puerta.
