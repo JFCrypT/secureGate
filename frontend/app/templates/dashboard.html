@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="grid grid-2">
+  <div id="estado" hx-get="{{ base }}/partials/estado" hx-trigger="every {{ poll_status_ms }}ms" hx-swap="innerHTML">
+    {% include "partials/estado.html" %}
+  </div>
+  <div id="tiempo-real" hx-get="{{ base }}/partials/tiempo-real" hx-trigger="every {{ poll_realtime_ms }}ms" hx-swap="innerHTML">
+    {% include "partials/tiempo_real.html" %}
+  </div>
+</div>
+{% endblock %}

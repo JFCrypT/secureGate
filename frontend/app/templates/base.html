@@ -30,6 +30,7 @@
     {% endif %}
   </header>
   <main class="page">
+    <p id="sin-conexion" class="banner banner-error" role="alert" hidden>Sin conexión con el servidor del dashboard. Los datos en pantalla pueden estar desactualizados.</p>
     {% for flash in flashes %}
     <p class="banner banner-{{ flash.kind }}" role="status">{{ flash.text }}</p>
     {% endfor %}

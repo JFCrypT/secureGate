@@ -43,7 +43,7 @@ a { color: var(--accent); }
 h1 { font-size: 1.35rem; margin: 0 0 12px; }
 h2 { font-size: 1.05rem; margin: 0 0 10px; }
 p { margin: 0 0 10px; }
-.muted { color: var(--muted); }
+.muted, .text-muted { color: var(--muted); }
 .small { font-size: 0.875rem; }
 .nowrap { white-space: nowrap; }
 

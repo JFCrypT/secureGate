@@ -1,0 +1,44 @@
+{% if api_error %}
+<p class="banner banner-error" role="alert">
+  <strong>{{ api_error }}</strong>
+  {% if stale %}· datos de las {{ estado.fetched_at }} ({{ stale_label }}){% endif %}
+</p>
+{% endif %}
+{% if estado %}
+{% if estado.runtime.simulate %}
+<p class="banner banner-warn">{{ simulation_banner }}</p>
+{% endif %}
+<section class="card {% if stale %}stale{% endif %}">
+  <h2>Estado del sistema {% if stale %}<span class="badge badge-warn">{{ stale_label }}</span>{% endif %}</h2>
+  <p class="big text-{{ estado.runtime.online_class }}">{{ estado.runtime.online_label }}</p>
+  {% if estado.runtime.offline_note %}<p class="text-bad">{{ estado.runtime.offline_note }}</p>{% endif %}
+  <dl class="facts">
+    <dt>Último heartbeat</dt>
+    <dd>{{ estado.runtime.heartbeat }}{% if estado.runtime.heartbeat_ago %} <span class="muted">({{ estado.runtime.heartbeat_ago }})</span>{% endif %}</dd>
+    <dt>Modo de acceso</dt>
+    <dd>{{ estado.runtime.methods_label }}</dd>
+    <dt>Modo de puerta</dt>
+    <dd>{% if estado.runtime.simulate %}<span class="badge badge-warn">{{ estado.runtime.door_mode_label }}</span>{% else %}{{ estado.runtime.door_mode_label }}{% endif %}</dd>
+  </dl>
+</section>
+<section class="card {% if stale %}stale{% endif %}">
+  <h2>Usuarios</h2>
+  <dl class="stats">
+    <div class="stat"><dt>Total</dt><dd>{{ estado.users.total }}</dd></div>
+    <div class="stat"><dt>Activos</dt><dd>{{ estado.users.active }}</dd></div>
+    <div class="stat"><dt>Con rostro</dt><dd>{{ estado.users.with_face }}</dd></div>
+    <div class="stat"><dt>Con tarjeta</dt><dd>{{ estado.users.with_rfid }}</dd></div>
+    <div class="stat"><dt>Con ambos</dt><dd>{{ estado.users.with_both }}</dd></div>
+  </dl>
+</section>
+<section class="card {% if stale %}stale{% endif %}">
+  <h2>Eventos de acceso (histórico)</h2>
+  <dl class="stats">
+    <div class="stat"><dt>Total</dt><dd>{{ estado.events.total }}</dd></div>
+    <div class="stat"><dt>Autorizados</dt><dd>{{ estado.events.granted }}</dd></div>
+    <div class="stat"><dt>Rechazados</dt><dd>{{ estado.events.denied }}</dd></div>
+    <div class="stat"><dt>Fuera de horario</dt><dd>{{ estado.events.restricted }}</dd></div>
+    <div class="stat"><dt>Errores de puerta</dt><dd>{{ estado.events.door_errors }}</dd></div>
+  </dl>
+</section>
+{% endif %}

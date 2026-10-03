@@ -20,6 +20,15 @@
     }
   });
 
+  // Si el propio front deja de responder, se avisa en vez de mostrar datos viejos.
+  function connectionLost(lost) {
+    var banner = document.getElementById("sin-conexion");
+    if (banner) { banner.hidden = !lost; }
+  }
+  document.addEventListener("htmx:sendError", function () { connectionLost(true); });
+  document.addEventListener("htmx:timeout", function () { connectionLost(true); });
+  document.addEventListener("htmx:afterOnLoad", function () { connectionLost(false); });
+
   // Resalta 3 s la tarjeta de "último acceso" cuando llega un evento nuevo.
   var lastEventId = null;
   var highlightUntil = 0;

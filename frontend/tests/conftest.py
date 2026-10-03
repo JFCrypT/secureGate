@@ -122,3 +122,23 @@ def admin(client):
 def viewer(client):
     assert login(client, "guardia").status_code == 303
     return client
+
+
+from contextlib import contextmanager  # noqa: E402
+
+
+@contextmanager
+def api_responds(front, handler):
+    """Reemplaza la API por `handler(request)` (o una excepción de httpx) un rato."""
+    def respond(request):
+        if isinstance(handler, Exception):
+            raise handler
+        return handler(request)
+
+    client = front.state.api
+    original = client._transport
+    client._transport = httpx.MockTransport(respond)
+    try:
+        yield
+    finally:
+        client._transport = original

@@ -1,0 +1,31 @@
+{% import "_macros.html" as m %}
+{% if rt_error %}
+<p class="banner banner-error" role="alert">
+  <strong>{{ rt_error }}</strong>
+  {% if rt_stale %}· datos de las {{ rt_fetched_at }} ({{ stale_label }}){% endif %}
+</p>
+{% endif %}
+{% if eventos is not none %}
+<section class="card {% if rt_stale %}stale{% endif %}" {% if ultimo %}data-event-id="{{ ultimo.event_id }}"{% endif %}>
+  <h2>Último acceso {% if rt_stale %}<span class="badge badge-warn">{{ stale_label }}</span>{% endif %}</h2>
+  {% if ultimo %}
+  <p class="big text-{{ ultimo.result_class }}">{{ ultimo.result_label }}</p>
+  <dl class="facts">
+    <dt>Usuario</dt><dd>{{ ultimo.user_label }}</dd>
+    <dt>Método</dt><dd>{{ ultimo.method_label }}</dd>
+    <dt>Fecha y hora</dt><dd>{{ ultimo.when }}</dd>
+    <dt>Puerta</dt><dd class="text-{{ ultimo.door_class }}">{{ ultimo.door_label }}</dd>
+    <dt>Alertas</dt><dd>{{ m.alerts(ultimo) }}</dd>
+  </dl>
+  {% else %}
+  <p class="muted">Todavía no hay accesos registrados.</p>
+  {% endif %}
+</section>
+{% if eventos %}
+<section class="card {% if rt_stale %}stale{% endif %}">
+  <h2>Últimos {{ eventos | length }} accesos</h2>
+  {{ m.events_table(eventos) }}
+  <p class="small"><a href="{{ base }}/historial">Ver historial completo</a></p>
+</section>
+{% endif %}
+{% endif %}
