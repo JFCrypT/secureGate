@@ -1,0 +1,13 @@
+<section class="card">
+  <h2>Alertas recientes <span class="muted small">({{ periodo_label | lower }})</span></h2>
+  {% if alertas_error %}
+  <p class="banner banner-error" role="alert">{{ alertas_error }}</p>
+  {% elif alertas %}
+  <dl class="stats">
+    {% for kind in alertas.counts %}
+    <div class="stat"><dt>{{ kind.label }}</dt><dd {% if kind.count %}class="text-bad"{% endif %}>{{ kind.count }}</dd></div>
+    {% endfor %}
+  </dl>
+  <p class="small"><a href="{{ base }}/alertas">Ver alertas</a></p>
+  {% endif %}
+</section>

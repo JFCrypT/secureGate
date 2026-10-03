@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Alertas{% endblock %}
+{% block content %}
+<h1>Estado y alertas</h1>
+
+<section class="card">
+  <h2>Estado actual</h2>
+  {% if api_error %}
+  <p class="banner banner-error" role="alert"><strong>{{ api_error }}</strong>{% if stale %} · último estado conocido de las {{ estado.fetched_at }} ({{ stale_label }}){% endif %}</p>
+  {% endif %}
+  {% if estado %}
+    {% if not estado.runtime.online %}
+    <p class="banner banner-error" role="alert"><strong>Runtime {{ estado.runtime.online_label }}.</strong> {{ estado.runtime.offline_note }}</p>
+    {% endif %}
+    {% if estado.runtime.simulate %}
+    <p class="banner banner-warn">{{ simulation_banner }}</p>
+    {% endif %}
+    {% if estado.runtime.online and not estado.runtime.simulate and not api_error %}
+    <p class="banner banner-ok">Runtime {{ estado.runtime.online_label }}, sin avisos de estado.</p>
+    {% endif %}
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="actions">
+    {% for key, label in periodos %}
+    <a class="btn btn-small {% if key == periodo %}btn-primary{% endif %}" href="{{ base }}/alertas?periodo={{ key }}"
+       {% if key == periodo %}aria-current="true"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if alertas_error %}
+<p class="banner banner-error" role="alert">{{ alertas_error }}: no se pudieron calcular las alertas.</p>
+{% elif alertas %}
+<section class="card">
+  <h2>{{ periodo_label }}</h2>
+  <dl class="stats">
+    {% for kind in alertas.counts %}
+    <div class="stat"><dt>{{ kind.label }}</dt><dd {% if kind.count %}class="text-bad"{% endif %}>{{ kind.count }}</dd></div>
+    {% endfor %}
+  </dl>
+  {% if alertas.truncated %}
+  <p class="banner banner-warn">Hay demasiados eventos en el período: las alertas se calcularon sobre los más recientes.</p>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>Detalle</h2>
+  {% if alertas.lista %}
+  {% if alertas.total > alertas.listed %}<p class="muted small">Se muestran las {{ alertas.listed }} más recientes de {{ alertas.total }}.</p>{% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Alerta</th><th>Fecha y hora</th><th>Usuario</th><th>Método</th><th>Resultado</th><th></th></tr></thead>
+      <tbody>
+        {% for item in alertas.lista %}
+        <tr>
+          <td><span class="badge badge-{% if item.kind == 'restricted' %}warn{% else %}bad{% endif %}">{{ item.label }}</span></td>
+          <td class="nowrap">{{ item.event.when }}</td>
+          <td>{{ item.event.user_label }}</td>
+          <td>{{ item.event.method_label }}</td>
+          <td><span class="badge badge-{{ item.event.result_class }}">{{ item.event.result_label }}</span></td>
+          <td class="nowrap"><a href="{{ item.url }}">Ver evento</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>Sin alertas en el período.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
