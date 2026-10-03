@@ -960,3 +960,53 @@ Integración final de los subsistemas sobre Raspberry Pi 3, incluyendo RFID RC52
 - IA local.
 - Frontend.
 - Integración final de todos los subsistemas sobre Raspberry Pi 3.
+
+
+## Configuración de Telegram
+
+secureGate puede enviar alertas mediante un bot de Telegram.
+
+La configuración se realiza una sola vez con:
+
+```bash
+./scripts/configure_telegram.sh
+```
+
+El script:
+
+- solicita el token del bot sin mostrarlo en pantalla;
+- verifica el bot mediante la API de Telegram;
+- detecta automáticamente el chat_id;
+- crea local/securegate.env;
+- asigna permisos 600;
+- envía un mensaje de prueba.
+
+El archivo privado generado contiene:
+
+```text
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+y se almacena en:
+
+```text
+local/securegate.env
+```
+
+Este archivo no debe versionarse.
+
+Para desplegar secureGate en Raspberry Pi 3 se transfieren manualmente:
+
+```text
+data/db/securegate.db
+local/keys/k_bio
+local/keys/k_rfid
+local/securegate.env
+```
+
+scripts/start_securegate.sh carga automáticamente local/securegate.env
+antes de iniciar el runtime.
+
+Telegram se utiliza únicamente para notificaciones. No interviene en la
+decisión de autorización ni condiciona la apertura de la puerta.

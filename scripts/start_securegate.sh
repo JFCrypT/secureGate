@@ -14,6 +14,19 @@ ESP_CAM_URL="http://192.168.1.95/capture"
 
 mkdir -p "$LOG_DIR"
 
+SECUREGATE_ENV="$ROOT_DIR/local/securegate.env"
+
+# Configuración local privada: Telegram y futuras variables del runtime.
+if [ -f "$SECUREGATE_ENV" ]; then
+    set -a
+    source "$SECUREGATE_ENV"
+    set +a
+    echo "[OK] Configuración local cargada."
+else
+    echo "[ADVERTENCIA] No existe local/securegate.env; Telegram quedará deshabilitado."
+fi
+
+
 [ -x "$BACKEND_PY" ] || {
     echo "[ERROR] No existe $BACKEND_PY"
     exit 1
