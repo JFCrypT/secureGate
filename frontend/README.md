@@ -1,6 +1,6 @@
 # secureGate — dashboard web (front)
 
-Dashboard del control de acceso del laboratorio. Es un BFF en FastAPI + Jinja2 + HTMX
+Dashboard del sistema de control de acceso secureGate. Es un BFF en FastAPI + Jinja2 + HTMX
 que consume la API REST de secureGate y agrega login de operadores.
 
 - **Contrato:** [`contrato.md`](contrato.md) (fuente de verdad).
@@ -139,7 +139,7 @@ tests/
 ## Límites conocidos
 
 - **Un solo worker de uvicorn** (sin `--workers`): el rate limit de login y las cachés viven en memoria.
-- HTTP plano, cookie sin `Secure`: pensado para la red controlada del lab.
+- HTTP plano, cookie sin `Secure`: pensado para la red local controlada.
 - La API no filtra por usuario ni por rango y no devuelve totales: el front lo resuelve
   con los fallbacks de `PEDIDOS_BACKEND.md` (paginado con "Siguiente", un pedido por día en reportes).
 - El alta facial no tiene endpoint: se hace en el puesto de enrolamiento local.

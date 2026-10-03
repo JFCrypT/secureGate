@@ -30,8 +30,9 @@ Incluye:
 - Heartbeat para que el tablero informe si el runtime está realmente activo.
 
 La actuación GPIO está implementada pero todavía requiere confirmar el módulo,
-pin y polaridad del relé antes de habilitarla físicamente. No incluye Reed switch,
-IA local ni frontend.
+pin y polaridad del relé antes de habilitarla físicamente. El frontend web ya está
+integrado. Continúan pendientes el Reed switch, la validación física completa del
+hardware y la investigación opcional de IA local.
 
 ## Acceso facial O RFID y tres intentos fallidos
 
@@ -88,10 +89,11 @@ python raspberry/runtime_access.py --methods rfid \
 No usar ese comando hasta verificar el módulo. El GPIO entrega 3,3 V; los 5 V
 del relé y los 12 V de la cerradura no deben ingresar al GPIO.
 
-## Backend para el frontend
+## Frontend y backend REST
 
-La interfaz no debe acceder directamente a SQLite, GPIO, UID ni embeddings. La
-API REST permite trabajar con usuarios y registros mediante JSON:
+El frontend web está integrado en `frontend/` y funciona como BFF: el navegador
+no accede directamente a SQLite, GPIO, UID, embeddings ni al token de la API.
+El frontend consume la API REST de secureGate mediante loopback.
 
 ```bash
 python -m pip install -r requirements-api.txt
@@ -100,9 +102,17 @@ export SECUREGATE_API_TOKEN="TOKEN_GENERADO"
 python raspberry/backend_api.py
 ```
 
-La documentación interactiva queda en `http://127.0.0.1:8000/docs`. Para usar
-otro equipo de la red y configurar CORS, seguir [API_FRONTEND.md](docs/API_FRONTEND.md).
-No se expone todavía apertura remota: el GPIO debe tener un único propietario.
+La documentación interactiva de la API queda en `http://127.0.0.1:8000/docs`.
+El dashboard se sirve en `http://IP_DEL_EQUIPO:8080/dashboard/`.
+El navegador sólo habla con el frontend; la API puede permanecer en
+`127.0.0.1:8000`. No se expone apertura remota: el GPIO debe tener un único
+propietario.
+
+Documentación específica:
+- `frontend/README.md`
+- `frontend/contrato.md`
+- `frontend/deploy/INSTALACION.md`
+- `docs/API_FRONTEND.md`
 La plataforma SBC definida para la solución actual y para una eventual implementación final en laboratorio es **Raspberry Pi 3**.
 
 Para preparar los veinte usuarios del prototipo sin crear credenciales falsas:
@@ -931,7 +941,9 @@ Definición de eventos y comportamientos normales, sospechosos y críticos; gene
 
 ### GRUPO 4 — Frontend
 
-Desarrollo de la interfaz de usuario de la solución final.
+Frontend web integrado mediante FastAPI + Jinja2 + HTMX. Incluye login de
+operadores, roles, dashboard, usuarios, enrolamiento RFID, historial, alertas,
+reportes y exportación CSV.
 
 ### GRUPO 5 — Integración final sobre Raspberry Pi 3 y RFID
 

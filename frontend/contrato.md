@@ -9,7 +9,7 @@
 ## 1. Arquitectura y red
 
 ```
-Cualquier dispositivo de la red del lab
+Cualquier dispositivo de la red local de prueba
         │  HTTP :8080   →  http://IP_PI:8080/dashboard/
         ▼
 Front (FastAPI + Jinja + HTMX) en la Raspberry Pi, 0.0.0.0:8080   ← NUESTRO
@@ -30,7 +30,7 @@ Reglas de red:
 - **El front se sirve directo:** `uvicorn app.main:app --host 0.0.0.0 --port 8080`, sin `--proxy-headers` y **con un solo worker** (sin `--workers`; ver §3). `GET /` redirige a `/dashboard/`.
 - **El front llama a la API por loopback** (`http://127.0.0.1:8000` en la Pi). Como el navegador nunca llama a la API, el front **no necesita CORS**.
 - **IP de la Pi:** se usa el marcador `IP_PI` en docs y ejemplos. Nunca es `192.168.1.95`, que es la ESP-CAM.
-- **HTTP plano** es aceptable sólo en la red controlada del lab, igual que la API. Por eso el login de operadores, el CSRF y el rate limit de §3 son **obligatorios**, y la cookie de sesión va sin `Secure`. Si se agrega HTTPS más adelante, la cookie pasa a `Secure`.
+- **HTTP plano** es aceptable sólo en la red local controlada, igual que la API. Por eso el login de operadores, el CSRF y el rate limit de §3 son **obligatorios**, y la cookie de sesión va sin `Secure`. Si se agrega HTTPS más adelante, la cookie pasa a `Secure`.
 - **Ningún archivo del repo contiene la contraseña del Wi-Fi.** La red se configura en la Pi, fuera de Git.
 
 ---
@@ -65,7 +65,7 @@ La API no tiene login de personas, sólo un token de administración. El front a
 - **CSRF:** cada formulario y cada POST, PATCH o DELETE de HTMX lleva un token CSRF de sesión (header `X-CSRF-Token`). Si falta o no coincide, devuelve 403.
 - **Rate limit de login:** 5 intentos fallidos por IP cada 5 minutos; después, bloqueo de 5 minutos. La IP es la del socket (`request.client.host`): no hay proxy delante, así que no se usa `X-Forwarded-For`.
 - **Un solo worker.** El rate limit y las cachés del BFF (lista de usuarios, último estado conocido) viven en la memoria del proceso: uvicorn corre **sin `--workers`**. Con más de un worker el límite de intentos se multiplicaría y la caché quedaría inconsistente.
-- Login, CSRF y rate limit son **obligatorios**: el front está expuesto directamente a la red del lab.
+- Login, CSRF y rate limit son **obligatorios**: el front está expuesto directamente a la red local de prueba.
 - Cualquier ruta sin sesión redirige a `/dashboard/login`.
 
 ---

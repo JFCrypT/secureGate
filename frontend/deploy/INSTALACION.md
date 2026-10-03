@@ -5,7 +5,7 @@ No se toca nginx, ufw, la IP de la Pi, ni el servicio o la configuración de la 
 El front es un proceso más, que escucha en el puerto **8080** y le habla a la API
 por `http://127.0.0.1:8000`.
 
-Marcadores: `USUARIO_RPI` (usuario de la Pi) e `IP_PI` (IP de la Pi en la red del lab;
+Marcadores: `USUARIO_RPI` (usuario de la Pi) e `IP_PI` (IP de la Pi en la red local de prueba;
 nunca `192.168.1.95`, que es la ESP-CAM).
 
 > `dev/mock_api.py` es sólo para desarrollo. **No se corre en la Pi.**
@@ -97,7 +97,7 @@ Tampoco lleva `--proxy-headers`: no hay proxy delante, y la IP del rate limit es
 
 ## 7. Verificación
 
-Desde una PC o un celular de la red del lab:
+Desde una PC o un celular de la red local de prueba:
 
 - [ ] `http://IP_PI:8080/dashboard/` muestra el login; sin login, cualquier ruta redirige al login.
 - [ ] Con el runtime corriendo se ve **ONLINE**; al detenerlo pasa a **OFFLINE** en unos 20 s.
@@ -119,7 +119,7 @@ El checklist completo está en `contrato.md` §11.
 | Nadie puede entrar | El archivo de operadores no existe, está vacío o el servicio no lo puede leer (dueño y permisos `600`) |
 | "Demasiados intentos fallidos" | 5 fallos desde esa IP: esperar 5 minutos (o reiniciar el front) |
 | Las horas se ven corridas | `FRONT_TIMEZONE` distinta de la del runtime, o la Pi sin NTP |
-| No carga desde el celular | El celular no está en la red del lab, o hay un firewall bloqueando el 8080 |
+| No carga desde el celular | El celular no está en la red local de prueba, o hay un firewall bloqueando el 8080 |
 
 ## 9. Actualizar y desinstalar
 
@@ -137,6 +137,6 @@ sudo rm /etc/systemd/system/securegate-frontend.service /etc/securegate/frontend
 ## 10. Seguridad
 
 - El token de la API vive sólo en `/etc/securegate/frontend.env`; nunca llega al navegador.
-- HTTP plano y cookie sin `Secure`: aceptable sólo en la red controlada del lab.
+- HTTP plano y cookie sin `Secure`: aceptable sólo en la red local controlada.
 - Recomendaciones opcionales para quien integre (nginx, IP fija, no exponer el 8000):
   `frontend/PEDIDOS_BACKEND.md`, sección "Recomendaciones para integración".
