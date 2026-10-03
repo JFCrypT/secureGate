@@ -21,7 +21,7 @@ from app.api_client import (
     SecureGateClient,
 )
 from app.config import ConfigError, load_env_file, load_settings
-from app.routes import dashboard, enrolamiento, partials, sesion, usuarios
+from app.routes import dashboard, enrolamiento, historial, partials, sesion, usuarios
 from app.templating import APP_DIR, render
 
 
@@ -121,7 +121,7 @@ def create_app(settings=None, api_transport=None):
 
     app.include_router(sesion.router, prefix=base)
     private = [Depends(auth.require_login)]
-    for module in (dashboard, partials, usuarios, enrolamiento):
+    for module in (dashboard, partials, usuarios, enrolamiento, historial):
         app.include_router(module.router, prefix=base, dependencies=private)
     return app
 

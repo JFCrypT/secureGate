@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Historial{% endblock %}
+{% block content %}
+<h1>Historial de accesos</h1>
+{% if evento_buscado is defined %}
+<section class="card">
+  {% if eventos %}
+  <p>Mostrando el evento #{{ evento_buscado }}. <a href="{{ todo_url }}">Ver el historial {% if filtros.dia %}de ese día{% else %}completo{% endif %}</a></p>
+  {{ m.events_table(eventos, show_restricted=true, highlight=evento_buscado) }}
+  {% else %}
+  <p class="banner banner-error" role="alert">No encontrado: el evento #{{ evento_buscado }} no está en el historial{% if filtros.dia %} de ese día{% endif %}.</p>
+  <p><a href="{{ todo_url }}">Ver el historial</a></p>
+  {% endif %}
+</section>
+{% else %}
+<section class="card">
+  {% if dia_invalido %}<p class="banner banner-error" role="alert">La fecha no es válida; se muestran todos los días.</p>{% endif %}
+  <form method="get" action="{{ base }}/historial" class="filters">
+    <div>
+      <label for="f-dia">Día</label>
+      <input type="date" id="f-dia" name="dia" value="{{ filtros.dia }}">
+    </div>
+    <div>
+      <label for="f-metodo">Método</label>
+      <select id="f-metodo" name="metodo">
+        <option value="">Todos</option>
+        {% for value, label in metodos.items() %}
+        <option value="{{ value }}" {% if filtros.metodo == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="f-resultado">Resultado</label>
+      <select id="f-resultado" name="resultado">
+        <option value="">Todos</option>
+        <option value="autorizado" {% if filtros.resultado == "autorizado" %}selected{% endif %}>Autorizado</option>
+        <option value="rechazado" {% if filtros.resultado == "rechazado" %}selected{% endif %}>No autorizado</option>
+      </select>
+    </div>
+    <div>
+      <label for="f-usuario">Usuario</label>
+      <select id="f-usuario" name="usuario">
+        <option value="">Todos</option>
+        <option value="{{ unknown }}" {% if filtros.usuario == unknown %}selected{% endif %}>{{ unknown_label }}</option>
+        {% for value, label in usuarios %}
+        <option value="{{ value }}" {% if filtros.usuario == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" name="fuera_horario" value="1" {% if filtros.fuera_horario %}checked{% endif %}> Sólo fuera de horario</label>
+    <label class="check"><input type="checkbox" name="con_alertas" value="1" {% if filtros.con_alertas %}checked{% endif %}> Sólo con alertas</label>
+    <label class="check"><input type="checkbox" name="error_puerta" value="1" {% if filtros.error_puerta %}checked{% endif %}> Sólo error de puerta</label>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+      <a class="btn" href="{{ base }}/historial">Limpiar</a>
+    </div>
+  </form>
+</section>
+<section class="card">
+  {% if traidos %}
+  <p class="muted small">
+    Registros {{ desde }} a {{ hasta }}, del más nuevo al más viejo.
+    {% if filtro_bff %}Coinciden {{ eventos | length }} de los {{ traidos }} de esta página; puede haber más en las siguientes.{% endif %}
+  </p>
+  {% endif %}
+  {% if eventos %}
+  {{ m.events_table(eventos, show_restricted=true) }}
+  {% elif traidos %}
+  <p>Ningún registro de esta página coincide con el filtro.</p>
+  {% else %}
+  <p>No hay registros para ese filtro.</p>
+  {% endif %}
+  <div class="actions">
+    {% if anterior %}<a class="btn" href="{{ anterior }}">← Anterior</a>{% endif %}
+    {% if siguiente %}<a class="btn" href="{{ siguiente }}">Siguiente →</a>{% endif %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
