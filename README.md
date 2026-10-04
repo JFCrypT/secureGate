@@ -1010,3 +1010,8 @@ antes de iniciar el runtime.
 
 Telegram se utiliza únicamente para notificaciones. No interviene en la
 decisión de autorización ni condiciona la apertura de la puerta.
+
+
+## Documentación
+
+- [Puesta en marcha final en Raspberry Pi 3](docs/PUESTA_EN_MARCHA_RPI3.md)

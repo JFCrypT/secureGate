@@ -240,3 +240,11 @@ biometría OR RFID
 - No exponer UID desde frontend.
 - No sobrescribir la base operativa de la Raspberry con una copia antigua después de enrolar RFID.
 - El modo de puerta permanece en simulación por defecto hasta validar el relé físicamente.
+
+## Puesta en marcha integral
+
+Para la instalación completa sobre Raspberry Pi 3, incluyendo biometría,
+RFID, Telegram, backend, frontend, logs, prueba funcional y arranque
+automático mediante cron, consultar:
+
+[PUESTA_EN_MARCHA_RPI3.md](PUESTA_EN_MARCHA_RPI3.md)
