@@ -24,6 +24,9 @@ captures/
 images/
 embeddings/
 
+# Logs diarios del runtime (logs/securegate-AAAA-MM-DD.log)
+logs/
+
 # Modelos descargados
 models/
 
